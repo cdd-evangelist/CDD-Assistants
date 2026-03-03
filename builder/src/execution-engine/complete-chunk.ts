@@ -44,7 +44,7 @@ export async function completeChunk(
 
   const filesExist = missingFiles.length === 0
 
-  // 2. テスト実行（テストファイルがあれば）
+  // 2. テスト実行（テストファイルがあり、テスト環境が整っている場合）
   let testsPassed: boolean | undefined
   let testErrors: string[] | undefined
 
@@ -52,7 +52,17 @@ export async function completeChunk(
     const testFiles = generatedFiles.filter(f =>
       f.includes('.test.') || f.includes('.spec.') || f.includes('__tests__')
     )
-    if (testFiles.length > 0) {
+
+    // node_modules が存在するか確認（テスト実行に必要）
+    let hasNodeModules = false
+    try {
+      await access(join(state.working_dir, 'node_modules'))
+      hasNodeModules = true
+    } catch {
+      // node_modules なし → テスト実行をスキップ
+    }
+
+    if (testFiles.length > 0 && hasNodeModules) {
       try {
         const testCmd = recipe.tech_stack.test
         await execFileAsync('npx', [testCmd, 'run', ...testFiles], {

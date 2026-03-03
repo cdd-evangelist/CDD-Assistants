@@ -1,0 +1,106 @@
+{
+  "project": "AI-Ghost-Shell",
+  "created_at": "2026-03-04T08:00:00Z",
+  "builder_version": "0.1.0",
+  "tech_stack": {
+    "language": "TypeScript",
+    "runtime": "Node.js",
+    "db": "SQLite",
+    "test": "vitest",
+    "platforms": ["linux", "macos"],
+    "platform_notes": "Git版はgitコマンド必須。Lite版はSQLiteのみ",
+    "directory_structure": "src/ + tests/"
+  },
+  "chunks": [
+    {
+      "id": "chunk-01",
+      "name": "データベーススキーマ",
+      "description": "ghost.db の5テーブル作成 + マイグレーション",
+      "depends_on": [],
+      "source_docs": [
+        {
+          "path": "BasicDesign.md",
+          "sections": ["3. データベーススキーマ", "3.1 ER図", "3.2 テーブル定義"],
+          "include": "partial"
+        }
+      ],
+      "source_content": "## 3. データベーススキーマ\n\n### 3.1 ER図（概念）\n\n```\nghost_profile 1──* configs\nghost_profile 1──* sessions ──→ .jsonl (生ログへのポインタ)\nghost_profile 1──* revisions\nsessions      1──* episode_memories\n```\n\n> **設計方針**: 生ログ（.jsonl）は DB に取り込まない。\n> ghost.db には要約・メタデータ・エピソード記憶だけを持ち、\n> 詳細が必要なときは行番号ポインタで .jsonl を直接参照する。\n\n### 3.2 テーブル定義\n\n#### ghost_profile — ゴーストの基本情報\n\n```sql\nCREATE TABLE ghost_profile (\n    id          INTEGER PRIMARY KEY AUTOINCREMENT,\n    name        TEXT NOT NULL,\n    description TEXT,\n    is_active   INTEGER NOT NULL DEFAULT 0,\n    created_at  TEXT NOT NULL DEFAULT (datetime('now')),\n    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))\n);\n```\n\n#### configs — 設定ファイル\n\n```sql\nCREATE TABLE configs (\n    id          INTEGER PRIMARY KEY AUTOINCREMENT,\n    ghost_id    INTEGER NOT NULL REFERENCES ghost_profile(id),\n    config_type TEXT NOT NULL,\n    file_name   TEXT NOT NULL,\n    content     TEXT NOT NULL,\n    version     INTEGER NOT NULL DEFAULT 1,\n    created_at  TEXT NOT NULL DEFAULT (datetime('now')),\n    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))\n);\n\nCREATE INDEX idx_configs_ghost_type ON configs(ghost_id, config_type);\n```\n\n#### sessions — セッションメタデータ\n\n```sql\nCREATE TABLE sessions (\n    id              INTEGER PRIMARY KEY AUTOINCREMENT,\n    ghost_id        INTEGER NOT NULL REFERENCES ghost_profile(id),\n    session_uuid    TEXT NOT NULL UNIQUE,\n    project_name    TEXT,\n    slug            TEXT,\n    cwd             TEXT,\n    git_branch      TEXT,\n    claude_version  TEXT,\n    start_time      TEXT NOT NULL,\n    end_time        TEXT,\n    summary         TEXT,\n    tags            TEXT,\n    message_count   INTEGER DEFAULT 0,\n    token_estimate  INTEGER DEFAULT 0,\n    log_path        TEXT,\n    line_count      INTEGER DEFAULT 0,\n    created_at      TEXT NOT NULL DEFAULT (datetime('now'))\n);\n\nCREATE INDEX idx_sessions_project ON sessions(project_name);\nCREATE INDEX idx_sessions_start   ON sessions(start_time);\nCREATE INDEX idx_sessions_ghost   ON sessions(ghost_id);\n```\n\n#### revisions — リビジョン履歴\n\n```sql\nCREATE TABLE revisions (\n    id          INTEGER PRIMARY KEY AUTOINCREMENT,\n    ghost_id    INTEGER NOT NULL REFERENCES ghost_profile(id),\n    rev_number  INTEGER NOT NULL,\n    config_type TEXT NOT NULL,\n    summary     TEXT,\n    snapshot    TEXT NOT NULL,\n    tag         TEXT,\n    tag_message TEXT,\n    created_at  TEXT NOT NULL DEFAULT (datetime('now'))\n);\n\nCREATE INDEX idx_revisions_ghost ON revisions(ghost_id, rev_number);\nCREATE INDEX idx_revisions_tag   ON revisions(tag);\n```\n\n#### episode_memories — エピソード記憶\n\n```sql\nCREATE TABLE episode_memories (\n    id              INTEGER PRIMARY KEY AUTOINCREMENT,\n    ghost_id        INTEGER NOT NULL REFERENCES ghost_profile(id),\n    session_uuid    TEXT NOT NULL,\n    title           TEXT NOT NULL,\n    context         TEXT,\n    decision        TEXT,\n    reasoning       TEXT,\n    outcome         TEXT,\n    tags            TEXT,\n    line_start      INTEGER,\n    line_end        INTEGER,\n    importance      REAL DEFAULT 0.7,\n    ref_count       INTEGER DEFAULT 0,\n    entities        TEXT,\n    related_episodes TEXT,\n    created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n    FOREIGN KEY (session_uuid) REFERENCES sessions(session_uuid)\n);\n\nCREATE INDEX idx_episodes_ghost      ON episode_memories(ghost_id);\nCREATE INDEX idx_episodes_session    ON episode_memories(session_uuid);\nCREATE INDEX idx_episodes_importance ON episode_memories(importance DESC);\n```",
+      "implementation_prompt": "以下の設計に基づき、SQLite データベースのスキーマとマイグレーション、接続モジュールを実装してください。\n\n{source_content}\n\n実装要件:\n- better-sqlite3 を使用（同期API、Node.js向けSQLite）\n- マイグレーションは冪等に実行できること（IF NOT EXISTS）\n- 接続モジュールは DB パスを引数で受け取り、初期化済みの DB インスタンスを返す\n- テストでは in-memory DB (:memory:) を使用",
+      "expected_outputs": [
+        "src/db/schema.sql",
+        "src/db/connection.ts",
+        "src/db/migrate.ts",
+        "tests/db/schema.test.ts"
+      ],
+      "completion_criteria": [
+        "5テーブル（ghost_profile, configs, sessions, revisions, episode_memories）が作成される",
+        "マイグレーションが冪等に実行できる",
+        "全インデックスが作成される",
+        "テストが通る"
+      ],
+      "estimated_input_tokens": 2500,
+      "estimated_output_tokens": 4000
+    },
+    {
+      "id": "chunk-02",
+      "name": "ghost-policy.toml パーサー",
+      "description": "ghost-policy.toml の読み込み・バリデーション・デフォルト値の適用",
+      "depends_on": ["chunk-01"],
+      "source_docs": [
+        {
+          "path": "ghost-policy-spec.md",
+          "sections": ["全体"],
+          "include": "full"
+        }
+      ],
+      "source_content": "ghost-policy.toml は AI-Ghost-Shell の記憶アクセスポリシーを定義する設定ファイル。\nパーサーは TOML を読み込み、バリデーションし、デフォルト値を適用した GhostPolicy オブジェクトを返す。\n\n主要セクション:\n- [memory] — 記憶の読み書きポリシー\n- [session] — セッション管理ポリシー\n- [episode] — エピソード記憶ポリシー\n- [security] — セキュリティポリシー\n\n※ 詳細仕様は ghost-policy-spec.md を参照。このチャンクでは基本的なパーサー構造を実装する。",
+      "implementation_prompt": "以下の設計に基づき、ghost-policy.toml のパーサーを実装してください。\n\n{source_content}\n\n依存コード:\n{{file:src/db/connection.ts}}\n\n実装要件:\n- @iarna/toml を使用して TOML をパース\n- GhostPolicy 型を定義し、各セクションの型を厳密に定義\n- デフォルト値を持つ関数 loadPolicy(path?: string) を公開\n- ファイルが存在しない場合はデフォルト値で動作\n- バリデーションエラーは明確なメッセージで報告",
+      "expected_outputs": [
+        "src/policy/types.ts",
+        "src/policy/defaults.ts",
+        "src/policy/parser.ts",
+        "tests/policy/parser.test.ts"
+      ],
+      "completion_criteria": [
+        "TOML ファイルが正しくパースされる",
+        "不正な設定でバリデーションエラーが返る",
+        "ファイル未指定時にデフォルト値が適用される",
+        "テストが通る"
+      ],
+      "estimated_input_tokens": 3500,
+      "estimated_output_tokens": 5000
+    },
+    {
+      "id": "chunk-03",
+      "name": "セッション管理",
+      "description": "セッションログのスキャン・メタデータ抽出・sessions テーブルへの UPSERT",
+      "depends_on": ["chunk-01"],
+      "source_docs": [
+        {
+          "path": "BasicDesign.md",
+          "sections": ["3.2 sessions テーブル", "4. 主要クエリ例", "5.2 セッションログのスキャン"],
+          "include": "partial"
+        }
+      ],
+      "source_content": "## セッションログのスキャン\n\n`~/.claude/projects/` 以下の .jsonl ファイルをスキャンし、メタデータのみを sessions テーブルに格納する。\n生ログは DB に取り込まず、ファイルパスと行数をポインタとして保持する。\n\n処理フロー:\n1. プロジェクトディレクトリを走査\n2. .jsonl ファイルごとに:\n   a. 先頭数行を読み、セッションメタデータを抽出（session_uuid, cwd, git_branch, version）\n   b. 行数をカウント\n   c. ファイルパスを記録\n3. sessions テーブルにメタデータを UPSERT（log_path, line_count 含む）\n\n## sessions テーブル（chunk-01 で作成済み）\n{{file:src/db/schema.sql}}\n\n## 主要クエリ例\n\n```sql\n-- セッション要約をキーワード検索\nSELECT session_uuid, project_name, start_time, summary, tags\nFROM sessions\nWHERE summary LIKE '%キーワード%'\n   OR tags LIKE '%キーワード%'\nORDER BY start_time DESC;\n\n-- 日付範囲でセッション一覧\nSELECT session_uuid, project_name, slug, start_time, end_time, summary\nFROM sessions\nWHERE start_time BETWEEN '2026-02-14' AND '2026-02-17'\nORDER BY start_time;\n```",
+      "implementation_prompt": "以下の設計に基づき、セッション管理モジュールを実装してください。\n\n{source_content}\n\n依存コード:\n{{file:src/db/connection.ts}}\n\n実装要件:\n- .jsonl ファイルをスキャンしてメタデータを抽出する scanSessions(dir) 関数\n- セッションメタデータを DB に UPSERT する upsertSession(db, metadata) 関数\n- .jsonl の先頭行から session_uuid と基本情報を読み取る\n- テストでは fixtures の .jsonl サンプルファイルを使用",
+      "expected_outputs": [
+        "src/session/scanner.ts",
+        "src/session/types.ts",
+        "tests/session/scanner.test.ts"
+      ],
+      "completion_criteria": [
+        ".jsonl ファイルからメタデータが抽出される",
+        "sessions テーブルに UPSERT される",
+        "同じファイルを2回スキャンしても重複しない",
+        "テストが通る"
+      ],
+      "estimated_input_tokens": 2000,
+      "estimated_output_tokens": 3500
+    }
+  ],
+  "execution_order": [
+    ["chunk-01"],
+    ["chunk-02", "chunk-03"]
+  ]
+}
