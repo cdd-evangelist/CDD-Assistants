@@ -1,0 +1,3 @@
+{"id":"DEC-001","decision":"2エディション構成（Git版+Lite版）","rationale":"用途に応じた柔軟性を確保","affects":["BasicDesign.md"],"created_at":"2026-02-27T10:00:00Z"}
+{"id":"DEC-002","decision":"MCP ツールは memory_search, memory_store, context_load の3本","rationale":"最小限の機能でMVP","affects":["mcp-tools.md","BasicDesign.md"],"created_at":"2026-02-28T14:00:00Z"}
+{"id":"DEC-003","decision":"ghost.db を共通データアクセス層として使用","rationale":"両エディションで同じクエリを使えるようにする","affects":["BasicDesign.md"],"created_at":"2026-03-01T09:00:00Z"}
