@@ -540,17 +540,33 @@ interface ExecutionResult {
 
 **claude-code アダプタ（デフォルト）:**
 
-Claude Code の Task エージェントを利用。並列実行が可能。
+Claude Code のサブエージェント（Agent ツール）を利用。並列実行が可能。
 
+2つのトリガーモードを持つ:
+
+**対話モード** — 会話中に「実装お願い」で起動:
 ```
 next_chunks() → [chunk-02, chunk-03]
 
-→ Task(subagent, prompt=chunk-02.implementation_prompt) ─┐
-→ Task(subagent, prompt=chunk-03.implementation_prompt) ─┤ 並列
+→ Agent(sonnet, prompt=chunk-02.implementation_prompt) ─┐
+→ Agent(sonnet, prompt=chunk-03.implementation_prompt) ─┤ 並列
                                                          ↓
 complete_chunk("chunk-02") ──→ 検証
 complete_chunk("chunk-03") ──→ 検証
 ```
+
+**ヘッドレスモード** — cron / スクリプトから `claude -p` で起動:
+```
+# cron が 5 時間ごとにトリガー
+claude -p "recipe.json を読み込み、次の実行可能チャンクを実装してください"
+
+→ Builder MCP: load_recipe → next_chunks → Agent(sonnet) → complete_chunk
+→ 結果を execution-state.json に記録
+→ 翌朝 / 帰宅後に人がレビュー
+```
+
+ヘッドレスモードは Claude Code Pro のトークン枠を最大限活用するための仕組み。
+5時間ごとにリセットされるトークン枠を、就寝中・出社中にも消化できる。
 
 **local-llm アダプタ:**
 
@@ -572,7 +588,21 @@ complete_chunk("chunk-02") ──→ 検証
 {
   "executor": {
     "type": "claude-code",
-    "config": {}
+    "config": {
+      "mode": "interactive"
+    }
+  }
+}
+```
+または
+```json
+{
+  "executor": {
+    "type": "claude-code",
+    "config": {
+      "mode": "headless",
+      "schedule": "*/5 * * * *"
+    }
   }
 }
 ```
@@ -606,15 +636,19 @@ Builder 本体はモデル選択を関知しない。ルーティングはアダ
 | `completion_criteria` の複雑さ | テスト通過 / 整合性検証 | 複雑な基準 → 高性能モデル |
 
 **設定例（claude-code アダプタ）:**
+
+サブエージェントのモデルをチャンクの特性に応じて切り替える。
+Opus はオーケストレーターとして温存し、実装は Sonnet / Haiku に委託する。
+
 ```json
 {
   "executor": {
     "type": "claude-code",
     "config": {
       "routing": {
-        "default": "haiku",
+        "default": "sonnet",
         "rules": [
-          { "when": "estimated_output_tokens > 8000", "use": "sonnet" },
+          { "when": "estimated_output_tokens < 3000", "use": "haiku" },
           { "when": "source_docs_count >= 2", "use": "sonnet" },
           { "when": "layer == 'specification'", "use": "sonnet" }
         ]
@@ -648,14 +682,16 @@ Builder 本体はモデル選択を関知しない。ルーティングはアダ
 
 ## 6. 実行フロー全体像
 
+### 6.1 対話モード（会話中にトリガー）
+
 ```mermaid
 sequenceDiagram
     participant H as 人
-    participant C as Claude Code
-    participant B as Builder
-    participant E as 実行アダプタ
+    participant C as Claude Code (Opus)
+    participant B as Builder MCP
+    participant S as サブエージェント (Sonnet)
 
-    H->>C: 「実装して」
+    H->>C: 「実装お願い」
     C->>B: load_recipe("recipe.json")
     B-->>C: 17 chunks, ready: [chunk-01]
 
@@ -663,12 +699,12 @@ sequenceDiagram
         C->>B: next_chunks()
         B-->>C: ready: [chunk-02, chunk-03]（プロンプト解決済み）
 
-        par 並列実行
-            C->>E: execute(chunk-02)
-            E-->>C: generated_files: [...]
+        par 並列実行（バックグラウンド）
+            C->>S: Agent(sonnet, chunk-02.prompt)
+            S-->>C: generated_files: [...]
         and
-            C->>E: execute(chunk-03)
-            E-->>C: generated_files: [...]
+            C->>S: Agent(sonnet, chunk-03.prompt)
+            S-->>C: generated_files: [...]
         end
 
         C->>B: complete_chunk("chunk-02", files)
@@ -682,7 +718,44 @@ sequenceDiagram
     C->>H: 「できたよ」
 ```
 
-### 人の介入ポイント
+対話モードでは Opus がオーケストレーター、Sonnet が実装担当。
+サブエージェントはバックグラウンドで並列実行可能なので、Opus との会話を続けながら実装を進められる。
+
+### 6.2 ヘッドレスモード（cron / スクリプトでトリガー）
+
+```mermaid
+sequenceDiagram
+    participant CR as cron
+    participant C as claude -p (ヘッドレス)
+    participant B as Builder MCP
+    participant S as サブエージェント (Sonnet)
+
+    CR->>C: claude -p "recipe.json の次チャンクを実装"
+    C->>B: load_recipe("recipe.json")
+    B-->>C: ready: [chunk-04, chunk-09]
+
+    loop トークン枠が残っている間
+        C->>B: next_chunks()
+        B-->>C: ready chunks（プロンプト解決済み）
+
+        C->>S: Agent(sonnet, chunk.prompt)
+        S-->>C: generated_files: [...]
+
+        C->>B: complete_chunk(chunk_id, files)
+        B-->>C: done / failed
+    end
+
+    C->>B: execution_status()
+    Note over C: execution-state.json に結果記録
+    Note over CR: 5時間後に次のウィンドウで再開
+```
+
+ヘッドレスモードは Claude Code Pro の **5時間トークンウィンドウ** を活用する仕組み。
+就寝中・出社中の空きウィンドウで自動実装を回し、翌朝/帰宅後に人がレビューする。
+
+詳細なユースケースは [Builder ユースケース](builder-usecases.md) を参照。
+
+### 6.3 人の介入ポイント
 
 人は完全に任せてもいいし、以下のタイミングで介入できる:
 
@@ -692,6 +765,7 @@ sequenceDiagram
 | チャンク失敗時 | エラー内容を見て方針を指示 |
 | 途中経過確認 | `execution_status` で進捗を確認 |
 | 完了後 | 生成コードをレビュー |
+| ヘッドレス結果確認 | 翌朝に execution-state.json をチェック |
 
 ---
 

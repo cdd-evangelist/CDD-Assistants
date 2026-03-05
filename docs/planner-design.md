@@ -330,7 +330,7 @@ Planner を通した設計では：
 {
   "idea": "AIの人格設定を管理・配布するツールを作りたい",
   "context": "（既存の設計文書があれば、design_context の出力）",
-  "constraints": ["Obsidian で文書を書く", "実装は Cline に渡す"]
+  "constraints": ["Obsidian で文書を書く", "実装は Builder（サブエージェント）に渡す"]
 }
 ```
 
