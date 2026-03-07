@@ -174,6 +174,7 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
       implementation_prompt: implementationPrompt,
       expected_outputs: draft.expected_outputs,
       completion_criteria: draft.completion_criteria,
+      reference_doc: draft.reference_doc,
       validation_context: draft.validation_context,
       estimated_input_tokens: draft.estimated_input_tokens,
       estimated_output_tokens: draft.estimated_output_tokens,

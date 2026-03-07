@@ -38,6 +38,7 @@
         "全インデックスが作成される",
         "テストが通る"
       ],
+      "reference_doc": "docs/ref/chunk-01-db-schema.md",
       "estimated_input_tokens": 2500,
       "estimated_output_tokens": 4000
     },
@@ -67,6 +68,7 @@
         "ファイル未指定時にデフォルト値が適用される",
         "テストが通る"
       ],
+      "reference_doc": "docs/ref/chunk-02-policy-parser.md",
       "estimated_input_tokens": 3500,
       "estimated_output_tokens": 5000
     },
@@ -95,6 +97,7 @@
         "同じファイルを2回スキャンしても重複しない",
         "テストが通る"
       ],
+      "reference_doc": "docs/ref/chunk-03-session.md",
       "estimated_input_tokens": 2000,
       "estimated_output_tokens": 3500
     }

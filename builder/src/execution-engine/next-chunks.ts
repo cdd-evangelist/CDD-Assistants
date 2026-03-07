@@ -89,6 +89,7 @@ export async function nextChunks(executionStatePath: string): Promise<NextChunks
       implementation_prompt: resolvedPrompt.replace('{source_content}', resolvedContent),
       expected_outputs: chunk.expected_outputs,
       completion_criteria: chunk.completion_criteria,
+      reference_doc: chunk.reference_doc,
       working_dir: state.working_dir,
     })
   }

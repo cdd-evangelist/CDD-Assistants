@@ -5,6 +5,7 @@ import type { AnalyzeDesignResult, SplitChunksInput, DocLayer } from '../src/typ
 function makeAnalysis(overrides?: Partial<AnalyzeDesignResult>): AnalyzeDesignResult {
   return {
     project_name: 'TestProject',
+    drift_warnings: [],
     documents: [],
     dependency_graph: {},
     layers: {

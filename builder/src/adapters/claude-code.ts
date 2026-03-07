@@ -98,9 +98,13 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
         }
       }
 
+      // リファレンスドキュメントを generated_files から分離
+      const referenceDoc = generatedFiles.find(f => f === chunk.reference_doc)
+
       return {
         success: true,
         generated_files: generatedFiles,
+        reference_doc: referenceDoc,
       }
     } catch (err: unknown) {
       const error = err as { stderr?: string; stdout?: string; message?: string }
@@ -124,7 +128,17 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
       '## 完了条件',
       ...chunk.completion_criteria.map(c => `- ${c}`),
       '',
-      '重要: 上記のファイルを全て生成し、完了条件を満たすコードを書いてください。',
+      '## リファレンスドキュメント',
+      '',
+      `実装が完了したら、以下のパスにリファレンスドキュメントを作成してください: \`${chunk.reference_doc}\``,
+      '',
+      'リファレンスには以下を日本語で記述してください:',
+      '- 実装したモジュール・関数の概要と役割',
+      '- 公開インターフェース（型、引数、戻り値）',
+      '- 設計文書のどの部分を実装したか',
+      '- 実装上の判断や補足事項',
+      '',
+      '重要: 上記のファイルとリファレンスドキュメントを全て生成し、完了条件を満たすコードを書いてください。',
       'テストファイルが含まれる場合は、テストが通ることを確認してください。',
     ]
 

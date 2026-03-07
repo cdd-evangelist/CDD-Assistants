@@ -33,6 +33,7 @@ export interface Chunk {
   implementation_prompt: string
   expected_outputs: string[]
   completion_criteria: string[]
+  reference_doc: string // リファレンスドキュメントの出力先パス
   validation_context?: string
   estimated_input_tokens: number
   estimated_output_tokens: number
@@ -56,6 +57,7 @@ export interface DraftChunk {
   implementation_prompt_template: string // {source_content} と {{file:path}} を含むテンプレート
   expected_outputs: string[]
   completion_criteria: string[]
+  reference_doc: string // リファレンスドキュメントの出力先パス
   validation_context?: string
   estimated_input_tokens: number
   estimated_output_tokens: number
@@ -101,9 +103,18 @@ export interface Decision {
   decided_at: string
 }
 
+/** ドリフト検出の警告 */
+export interface DriftWarning {
+  reference: string        // リファレンスファイルパス
+  commits_since: number    // リファレンス生成後のコミット数
+  changed_files: string[]  // 変更されたファイル
+  message: string          // 警告メッセージ
+}
+
 /** analyze_design の出力 */
 export interface AnalyzeDesignResult {
   project_name: string
+  drift_warnings: DriftWarning[]
   documents: DocumentAnalysis[]
   dependency_graph: Record<string, string[]> // doc → [referenced docs]
   layers: Record<DocLayer, string[]>
@@ -169,12 +180,14 @@ export interface PreparedChunk {
   implementation_prompt: string // プレースホルダ解決済み
   expected_outputs: string[]
   completion_criteria: string[]
+  reference_doc: string // リファレンスドキュメントの出力先パス
   working_dir: string
 }
 
 export interface ExecutionResult {
   success: boolean
   generated_files: string[]
+  reference_doc?: string // 生成されたリファレンスのパス
   error?: string
 }
 

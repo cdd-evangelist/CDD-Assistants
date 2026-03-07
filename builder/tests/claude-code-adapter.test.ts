@@ -27,6 +27,7 @@ function createTestChunk(overrides: Partial<PreparedChunk> = {}): PreparedChunk 
     implementation_prompt: 'テスト用のファイルを作成してください',
     expected_outputs: ['src/test.ts'],
     completion_criteria: ['ファイルが作成される'],
+    reference_doc: 'docs/ref/chunk-01-test.md',
     working_dir: '/tmp/test-project',
     ...overrides,
   }

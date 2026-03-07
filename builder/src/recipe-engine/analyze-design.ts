@@ -1,13 +1,18 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, stat } from 'node:fs/promises'
 import { resolve, basename, join } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type {
   AnalyzeDesignResult,
   DocumentAnalysis,
   DocFrontmatter,
   DocLayer,
   Decision,
+  DriftWarning,
   TechStack,
 } from '../types.js'
+
+const execFileAsync = promisify(execFile)
 
 // --- フロントマター解析 ---
 
@@ -228,6 +233,66 @@ async function loadDecisions(projectDir: string): Promise<Decision[]> {
   }
 }
 
+// --- ドリフト検出 ---
+
+/**
+ * 既存リファレンスとコミット履歴を照合し、設計文書と実装の乖離を検出する。
+ * git リポジトリでない場合やリファレンスが存在しない場合は空配列を返す。
+ */
+export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
+  const refDir = join(projectDir, 'docs', 'ref')
+  let refFiles: string[]
+  try {
+    refFiles = (await readdir(refDir)).filter(f => f.endsWith('.md'))
+  } catch {
+    return [] // リファレンスディレクトリなし → 初回ビルド
+  }
+
+  if (refFiles.length === 0) return []
+
+  const warnings: DriftWarning[] = []
+
+  for (const refFile of refFiles) {
+    const refPath = join(refDir, refFile)
+    const refStat = await stat(refPath)
+    const refDate = refStat.mtime.toISOString()
+
+    // リファレンス生成後のコミットで変更されたファイルを取得
+    try {
+      const { stdout } = await execFileAsync(
+        'git', ['log', '--since', refDate, '--name-only', '--pretty=format:', '--diff-filter=ACMR'],
+        { cwd: projectDir }
+      )
+
+      const changedFiles = [...new Set(
+        stdout.split('\n')
+          .map(l => l.trim())
+          .filter(l => l && !l.startsWith('docs/ref/'))
+      )]
+
+      if (changedFiles.length > 0) {
+        // コミット数をカウント
+        const { stdout: logOut } = await execFileAsync(
+          'git', ['log', '--since', refDate, '--oneline'],
+          { cwd: projectDir }
+        )
+        const commitCount = logOut.trim().split('\n').filter(l => l.trim()).length
+
+        warnings.push({
+          reference: join('docs', 'ref', refFile),
+          commits_since: commitCount,
+          changed_files: changedFiles,
+          message: `リファレンス生成後にコードが変更されています。設計文書が最新の実装を反映しているか、Planner で確認してください`,
+        })
+      }
+    } catch {
+      // git コマンド失敗 → git リポジトリでない等。スキップ
+    }
+  }
+
+  return warnings
+}
+
 // --- メイン ---
 
 export async function analyzeDesign(input: {
@@ -237,7 +302,10 @@ export async function analyzeDesign(input: {
 }): Promise<AnalyzeDesignResult> {
   const { doc_paths, project_name, project_dir } = input
 
-  // 1. 文書を読み込み
+  // 1. ドリフト検出（既存実装がある場合）
+  const driftWarnings = project_dir ? await detectDrift(project_dir) : []
+
+  // 2. 文書を読み込み
   const docs: Array<{
     path: string
     name: string
@@ -270,10 +338,10 @@ export async function analyzeDesign(input: {
     })
   }
 
-  // 2. decisions.jsonl を読み込み
+  // 3. decisions.jsonl を読み込み
   const decisions = project_dir ? await loadDecisions(project_dir) : []
 
-  // 3. 依存グラフを構築
+  // 4. 依存グラフを構築
   const docNameSet = new Set(docs.map(d => d.name))
   const dependencyGraph: Record<string, string[]> = {}
 
@@ -298,7 +366,7 @@ export async function analyzeDesign(input: {
     }
   }
 
-  // 4. レイヤー分類
+  // 5. レイヤー分類
   const layers: Record<DocLayer, string[]> = {
     foundation: [],
     specification: [],
@@ -314,7 +382,7 @@ export async function analyzeDesign(input: {
     layers[layer].push(doc.path)
   }
 
-  // 5. referenced_by を構築
+  // 6. referenced_by を構築
   const referencedByMap = new Map<string, string[]>()
   for (const doc of docs) {
     referencedByMap.set(doc.path, [])
@@ -328,10 +396,10 @@ export async function analyzeDesign(input: {
     }
   }
 
-  // 6. tech_stack 抽出
+  // 7. tech_stack 抽出
   const techStack = extractTechStack(docs)
 
-  // 7. DocumentAnalysis を組み立て
+  // 8. DocumentAnalysis を組み立て
   const documents: DocumentAnalysis[] = docs.map(doc => {
     const layer = doc.frontmatter?.layer ?? inferLayer(doc.name, doc.body)
     return {
@@ -350,6 +418,7 @@ export async function analyzeDesign(input: {
 
   return {
     project_name: project_name,
+    drift_warnings: driftWarnings,
     documents,
     dependency_graph: dependencyGraph,
     layers,

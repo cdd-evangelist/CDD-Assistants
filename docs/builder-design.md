@@ -95,18 +95,43 @@ Builder
 `project_dir` を指定すると、ディレクトリ内の `decisions.jsonl` も自動で読み込む。
 
 **処理:**
-1. 各文書を読み取り、メタデータを抽出（行数、セクション構成）
-2. Planner が付与したフロントマター（`status`, `layer`, `decisions`, `open_questions`）があれば優先使用。なければ本文から推定
-3. `[[wiki-link]]` やセクション参照から文書間の依存グラフを構築
-4. `decisions.jsonl` があれば、決定事項と影響文書の関係を依存グラフに反映
-5. 各文書をレイヤーに分類
-6. 技術選定に関する記述を設計文書から抽出（→ recipe.json の `tech_stack` に反映）
-7. 推定トークン数を算出
+1. **ドリフト検出（既存実装がある場合）**
+   - `project_dir` 内に既存のリファレンス（`docs/ref/*.md`）があるか確認
+   - リファレンスがあれば、リファレンス生成日時以降の git コミット履歴を取得
+   - コミットで変更されたファイルと、リファレンスが記述する機能範囲を照合
+   - 乖離があれば `drift_warnings` として警告を出力（処理は止めない）
+2. 各文書を読み取り、メタデータを抽出（行数、セクション構成）
+3. Planner が付与したフロントマター（`status`, `layer`, `decisions`, `open_questions`）があれば優先使用。なければ本文から推定
+4. `[[wiki-link]]` やセクション参照から文書間の依存グラフを構築
+5. `decisions.jsonl` があれば、決定事項と影響文書の関係を依存グラフに反映
+6. 各文書をレイヤーに分類
+7. 技術選定に関する記述を設計文書から抽出（→ recipe.json の `tech_stack` に反映）
+8. 推定トークン数を算出
+
+**ドリフト検出の出力例:**
+
+乖離が見つかった場合、出力に `drift_warnings` が含まれる:
+```json
+{
+  "drift_warnings": [
+    {
+      "reference": "docs/ref/chunk-01-db-schema.md",
+      "commits_since": 3,
+      "changed_files": ["src/db/schema.sql", "src/db/connection.ts"],
+      "message": "リファレンス生成後にデータ層のコードが変更されています。設計文書が最新の実装を反映しているか、Planner で確認してください"
+    }
+  ]
+}
+```
+
+乖離がない場合、`drift_warnings` は空配列。Builder は警告を出すが処理を止めない。
+続行するかどうかの判断は人に委ねる。
 
 **出力:**
 ```json
 {
   "project_name": "AI-Ghost-Shell",
+  "drift_warnings": [],
   "documents": [
     {
       "path": "BasicDesign.md",
@@ -311,6 +336,7 @@ Step 3: 各レイヤー内でチャンクに分割
       "implementation_prompt": "以下の設計に基づき、SQLite データベースのスキーマとマイグレーションを実装してください。\n\n{source_content}",
       "expected_outputs": ["..."],
       "completion_criteria": ["..."],
+      "reference_doc": "docs/ref/chunk-01-db-schema.md",
       "validation_context": "UC-1: 初期セットアップで ghost.db が作成される"
     }
   ],
@@ -504,9 +530,76 @@ chunk-04 の source_content に含まれる:
 
 ---
 
-## 5. 実行アダプタ
+## 5. リファレンス照合（ラウンドトリップ検証）
 
-### 5.1 インターフェース
+### 5.1 概念
+
+設計文書からコードを生成し、そのコードからリファレンス（日本語）を生成する。
+設計文書（入力）とリファレンス（出力）を突き合わせ、矛盾がなければ実装は正しい。
+
+```
+設計文書(日本語) → コード(コンパイル) → リファレンス(日本語)
+    ↓                                        ↓
+    └────────── Opus が突き合わせ ────────────┘
+              矛盾なし → complete_chunk
+              矛盾あり → サブエージェントに差し戻し
+```
+
+これは CDD の「コードを見て考えるな、日本語を見て考えろ」の実践。
+コードの中身を読まなくても、**日本語同士の照合**で設計意図の逸脱を検出できる。
+
+### 5.2 リファレンスの位置づけ
+
+- サブエージェントが実装 + テスト + リファレンス作成を一括で行う
+- リファレンスのフォーマットは固定しない（フロントエンド / バックエンド / CLI 等で異なる）
+- 用途は2つ:
+  1. **Opus による設計照合** — 設計文書との矛盾を検出する（主目的）
+  2. **人のメンテナンス参照** — 後日コードに手を入れる際の手がかり
+
+### 5.3 実行フローへの組み込み
+
+```
+サブエージェント(Sonnet): 実装 + テスト + リファレンス作成
+    ↓ Done
+Opus(オーケストレーター): リファレンス vs 設計文書の整合性チェック
+    ↓ OK → complete_chunk → 後続アンロック
+    ↓ NG → サブエージェントに差し戻し（最大リトライ回数まで）
+    ↓ リトライ超過 → 人に判断を仰ぐ
+```
+
+Opus はリファレンスと設計文書を読み比べるだけ。
+これは MCP ツールではなく、**実装プロンプトとオーケストレーションの設計**で実現する。
+
+### 5.4 照合の収束制御
+
+照合→差し戻しのループが終息しない場合に備え、以下の制御を設ける:
+
+- **判断基準の重み付け** — 照合の指摘事項に重みを持たせる。致命的な乖離（型の不一致、機能の欠落）は即差し戻し、軽微な乖離（命名の揺れ、説明文の粒度）は警告に留めて通過させる。リトライのたびに軽微な指摘の閾値を緩和し、収束を促す
+- **最大リトライ回数** — 規定回数（デフォルト3回）を超えたら自動差し戻しを停止し、人に判断を仰ぐ
+- **収束しないこと自体がシグナル** — リトライ超過は設計文書の記述が曖昧である可能性を示す。「Planner に戻って設計を詰め直す」という判断材料になる
+
+### 5.5 レシピへの反映
+
+各チャンクに `reference_doc` フィールドを追加。リファレンスの出力先パスを指定する。
+
+```json
+{
+  "id": "chunk-01",
+  "name": "データベーススキーマ",
+  "expected_outputs": ["src/db/schema.sql", "src/db/connection.ts", "tests/db/schema.test.ts"],
+  "reference_doc": "docs/ref/chunk-01-db-schema.md",
+  ...
+}
+```
+
+`reference_doc` は `expected_outputs` には含めない（リファレンスは実装成果物ではなく検証用文書）。
+ただし `complete_chunk` の前に Opus がリファレンスの存在と内容を確認する。
+
+---
+
+## 6. 実行アダプタ
+
+### 6.1 インターフェース
 
 実行アダプタは以下のインターフェースを満たす。
 Builder のレシピエンジン・実行エンジンは LLM に依存せず、アダプタだけが LLM を知っている。
@@ -516,6 +609,7 @@ interface ChunkExecutor {
   /**
    * チャンクの実装プロンプトを受け取り、ファイルを生成する。
    * プロンプトは自然言語 + コード断片。特定のAPI形式に依存しない。
+   * リファレンスドキュメントの生成も含む。
    */
   execute(chunk: PreparedChunk): Promise<ExecutionResult>
 }
@@ -526,47 +620,38 @@ interface PreparedChunk {
   implementation_prompt: string   // プレースホルダ解決済みの自然言語プロンプト
   expected_outputs: string[]      // 生成すべきファイルパス
   completion_criteria: string[]   // 完了条件（自然言語）
+  reference_doc: string           // リファレンスドキュメントの出力先パス
   working_dir: string             // 実装先ディレクトリ
 }
 
 interface ExecutionResult {
   success: boolean
   generated_files: string[]       // 実際に生成されたファイルパス
+  reference_doc?: string          // 生成されたリファレンスのパス
   error?: string                  // 失敗時のエラー内容
 }
 ```
 
-### 5.2 アダプタ実装例
+### 6.2 アダプタ実装例
 
 **claude-code アダプタ（デフォルト）:**
 
 Claude Code のサブエージェント（Agent ツール）を利用。並列実行が可能。
 
-2つのトリガーモードを持つ:
-
-**対話モード** — 会話中に「実装お願い」で起動:
 ```
 next_chunks() → [chunk-02, chunk-03]
 
 → Agent(sonnet, prompt=chunk-02.implementation_prompt) ─┐
 → Agent(sonnet, prompt=chunk-03.implementation_prompt) ─┤ 並列
                                                          ↓
+Opus: リファレンス vs 設計文書の照合
+                                                         ↓
 complete_chunk("chunk-02") ──→ 検証
 complete_chunk("chunk-03") ──→ 検証
 ```
 
-**ヘッドレスモード** — cron / スクリプトから `claude -p` で起動:
-```
-# cron が 5 時間ごとにトリガー
-claude -p "recipe.json を読み込み、次の実行可能チャンクを実装してください"
-
-→ Builder MCP: load_recipe → next_chunks → Agent(sonnet) → complete_chunk
-→ 結果を execution-state.json に記録
-→ 翌朝 / 帰宅後に人がレビュー
-```
-
-ヘッドレスモードは Claude Code Pro のトークン枠を最大限活用するための仕組み。
-5時間ごとにリセットされるトークン枠を、就寝中・出社中にも消化できる。
+サブエージェントは実装 + テスト + リファレンス作成を一括で行い、
+Opus がリファレンスと設計文書を照合した上で `complete_chunk` を呼ぶ。
 
 **local-llm アダプタ:**
 
@@ -588,21 +673,7 @@ complete_chunk("chunk-02") ──→ 検証
 {
   "executor": {
     "type": "claude-code",
-    "config": {
-      "mode": "interactive"
-    }
-  }
-}
-```
-または
-```json
-{
-  "executor": {
-    "type": "claude-code",
-    "config": {
-      "mode": "headless",
-      "schedule": "*/5 * * * *"
-    }
+    "config": {}
   }
 }
 ```
@@ -621,7 +692,7 @@ complete_chunk("chunk-02") ──→ 検証
 
 recipe.json またはコマンドライン引数で指定。
 
-### 5.3 モデルルーティング
+### 6.3 モデルルーティング
 
 アダプタはチャンクのメタデータに基づき、内部でモデルを振り分けることができる。
 Builder 本体はモデル選択を関知しない。ルーティングはアダプタの中で閉じる。
@@ -680,9 +751,9 @@ Opus はオーケストレーターとして温存し、実装は Sonnet / Haiku
 
 ---
 
-## 6. 実行フロー全体像
+## 7. 実行フロー全体像
 
-### 6.1 対話モード（会話中にトリガー）
+### 7.1 対話モード（会話中にトリガー）
 
 ```mermaid
 sequenceDiagram
@@ -701,16 +772,19 @@ sequenceDiagram
 
         par 並列実行（バックグラウンド）
             C->>S: Agent(sonnet, chunk-02.prompt)
-            S-->>C: generated_files: [...]
+            S-->>C: generated_files + reference_doc
         and
             C->>S: Agent(sonnet, chunk-03.prompt)
-            S-->>C: generated_files: [...]
+            S-->>C: generated_files + reference_doc
         end
 
-        C->>B: complete_chunk("chunk-02", files)
-        B-->>C: done, newly_unblocked: [chunk-04]
-        C->>B: complete_chunk("chunk-03", files)
-        B-->>C: done, newly_unblocked: [chunk-07]
+        Note over C: Opus: リファレンス vs 設計文書を照合
+        alt 照合OK
+            C->>B: complete_chunk("chunk-02", files)
+            B-->>C: done, newly_unblocked: [chunk-04]
+        else 照合NG
+            C->>S: 差し戻し（乖離箇所を指示）
+        end
     end
 
     C->>B: execution_status()
@@ -719,43 +793,10 @@ sequenceDiagram
 ```
 
 対話モードでは Opus がオーケストレーター、Sonnet が実装担当。
-サブエージェントはバックグラウンドで並列実行可能なので、Opus との会話を続けながら実装を進められる。
+サブエージェントが実装 + テスト + リファレンスを生成し、Opus がリファレンスと設計文書を照合してから `complete_chunk` を呼ぶ。
+不具合は後続チャンクに流出する前に、このラウンドトリップ検証で検出される。
 
-### 6.2 ヘッドレスモード（cron / スクリプトでトリガー）
-
-```mermaid
-sequenceDiagram
-    participant CR as cron
-    participant C as claude -p (ヘッドレス)
-    participant B as Builder MCP
-    participant S as サブエージェント (Sonnet)
-
-    CR->>C: claude -p "recipe.json の次チャンクを実装"
-    C->>B: load_recipe("recipe.json")
-    B-->>C: ready: [chunk-04, chunk-09]
-
-    loop トークン枠が残っている間
-        C->>B: next_chunks()
-        B-->>C: ready chunks（プロンプト解決済み）
-
-        C->>S: Agent(sonnet, chunk.prompt)
-        S-->>C: generated_files: [...]
-
-        C->>B: complete_chunk(chunk_id, files)
-        B-->>C: done / failed
-    end
-
-    C->>B: execution_status()
-    Note over C: execution-state.json に結果記録
-    Note over CR: 5時間後に次のウィンドウで再開
-```
-
-ヘッドレスモードは Claude Code Pro の **5時間トークンウィンドウ** を活用する仕組み。
-就寝中・出社中の空きウィンドウで自動実装を回し、翌朝/帰宅後に人がレビューする。
-
-詳細なユースケースは [Builder ユースケース](builder-usecases.md) を参照。
-
-### 6.3 人の介入ポイント
+### 7.2 人の介入ポイント
 
 人は完全に任せてもいいし、以下のタイミングで介入できる:
 
@@ -763,13 +804,13 @@ sequenceDiagram
 |-----------|-------|
 | 実行前 | レシピを確認して順序を調整 |
 | チャンク失敗時 | エラー内容を見て方針を指示 |
+| 照合NG時 | 設計の意図を補足して方針を指示 |
 | 途中経過確認 | `execution_status` で進捗を確認 |
-| 完了後 | 生成コードをレビュー |
-| ヘッドレス結果確認 | 翌朝に execution-state.json をチェック |
+| 完了後 | 生成コードとリファレンスをレビュー |
 
 ---
 
-## 7. AI-Ghost-Shell で検証：分割シミュレーション
+## 8. AI-Ghost-Shell で検証：分割シミュレーション
 
 14本の設計文書を Builder に通した場合の想定チャンク分割:
 
@@ -850,9 +891,9 @@ Lv.5: [16, 17]
 
 ---
 
-## 8. チャンク分割の原則
+## 9. チャンク分割の原則
 
-### 8.1 サイズ制約
+### 9.1 サイズ制約
 
 | 項目 | 制約 | 根拠 |
 |------|------|------|
@@ -861,7 +902,7 @@ Lv.5: [16, 17]
 | 出力ファイル数 | 3〜5本 | 多すぎるとファイル間整合性が崩れる |
 | 完了条件 | テスト可能 | 次チャンクの前提を保証する |
 
-### 8.2 分割の判断基準
+### 9.2 分割の判断基準
 
 **分割すべき場合:**
 - 設計文書の異なるセクションが独立した機能を定義している
@@ -873,7 +914,7 @@ Lv.5: [16, 17]
 - 分割すると片方のチャンクが小さすぎる（< 1k 出力）
 - 分割するとチャンク間のインターフェース定義が必要になり、かえって複雑になる
 
-### 8.3 既存コードの扱い
+### 9.3 既存コードの扱い
 
 チャンク 02 以降は、前のチャンクで生成されたコードを参照する必要がある。
 
@@ -896,7 +937,7 @@ chunk-04 の入力:
 
 ---
 
-## 9. 技術スタック
+## 10. 技術スタック
 
 | 項目 | 選定 | 理由 |
 |------|------|------|
@@ -909,7 +950,7 @@ chunk-04 の入力:
 
 ---
 
-## 10. 未決事項
+## 11. 未決事項
 
 - [ ] `implementation_prompt` のテンプレート最適化（実際に実行して調整）
 - [ ] ユースケース文書の `validation_context` をどこまで含めるか

@@ -343,6 +343,7 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
         `以下の設計に基づき、${candidate.name} を実装してください。\n\n{source_content}`,
       expected_outputs: [], // 機械的に決定困難 → 要レビュー
       completion_criteria: ['テストが通る'],
+      reference_doc: `docs/ref/${id}-${candidate.name.replace(/[^a-zA-Z0-9\u3000-\u9fff]/g, '-')}.md`,
       validation_context: validationContext,
       estimated_input_tokens: candidate.estimatedInputTokens,
       estimated_output_tokens: estOutputTokens,
