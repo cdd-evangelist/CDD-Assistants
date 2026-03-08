@@ -100,4 +100,50 @@ describe('clarifyIdea', () => {
 
     expect(result.questions.length).toBeLessThanOrEqual(4)
   })
+
+  // --- コンシェルジュ（規模判定）---
+
+  it('ワンショットのシグナルで route: "one-shot" を返す', () => {
+    const result = clarifyIdea({
+      raw_idea: 'CSVを日付でソートするスクリプトをさっと書いて',
+    })
+
+    expect(result.route).toBe('one-shot')
+    expect(result.one_shot_suggestion).toBeTruthy()
+  })
+
+  it('プロジェクト規模の要求で route: "full" を返す', () => {
+    const result = clarifyIdea({
+      raw_idea: 'AIの人格設定を管理・配布するシステムを作りたい。チームで運用する予定',
+    })
+
+    expect(result.route).toBe('full')
+    expect(result.one_shot_suggestion).toBeUndefined()
+  })
+
+  it('シグナルが混在する場合は route: "full" を返す', () => {
+    const result = clarifyIdea({
+      raw_idea: 'とりあえずプロジェクト管理システムのプロトタイプを作りたい',
+    })
+
+    // 「とりあえず」はワンショットだが「システム」「プロジェクト」はフル
+    expect(result.route).toBe('full')
+  })
+
+  it('シグナルがない場合は route: "full" を返す', () => {
+    const result = clarifyIdea({
+      raw_idea: 'AIと話してると毎回同じ説明するのがダルい。覚えててほしい',
+    })
+
+    expect(result.route).toBe('full')
+  })
+
+  it('existing_context のワンショットシグナルも判定に含める', () => {
+    const result = clarifyIdea({
+      raw_idea: 'ファイル変換するやつほしい',
+      existing_context: 'さっと動けばいい',
+    })
+
+    expect(result.route).toBe('one-shot')
+  })
 })

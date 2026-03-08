@@ -17,7 +17,7 @@ const server = new McpServer({
 
 server.tool(
   'clarify_idea',
-  '曖昧な構想を4軸（対象ユーザー・価値・スコープ・制約）で分析し、深掘り質問を生成する',
+  '曖昧な構想を受け取り、規模判定（ワンショット/CDDフルコース）と4軸分析を行う。Plannerの入口（コンシェルジュ）',
   {
     raw_idea: z.string().describe('ユーザーの生のアイデアや構想テキスト'),
     existing_context: z.string().nullable().optional().describe('既存のコンテキスト情報（あれば）'),

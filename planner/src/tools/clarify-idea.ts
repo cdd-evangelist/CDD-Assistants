@@ -1,6 +1,7 @@
 import type {
   ClarifyIdeaInput,
   ClarifyIdeaResult,
+  ClarifyRoute,
   AxisKey,
   AxisStatus,
   TemplateQuestion,
@@ -182,18 +183,45 @@ function determineMode(fulfillment: number): 'diverge' | 'converge' | 'transitio
   return 'transition'
 }
 
+// --- コンシェルジュ: 規模判定 ---
+
+const ONE_SHOT_SIGNALS: RegExp[] = [
+  /とりあえず/, /急ぎ/, /やっつけ/, /試し[にで]/, /さっと/, /ちゃっちゃ/,
+  /スクリプト/, /関数/, /ワンライナー/, /変換/, /するやつ/, /1本/,
+  /簡単[なに]/, /すぐ/, /パッと/, /ちょっと/,
+]
+
+const FULL_CDD_SIGNALS: RegExp[] = [
+  /システム/, /アプリ/, /ツール群/, /設計/, /アーキテクチャ/,
+  /チームで/, /配布/, /メンテ/, /運用/, /拡張/,
+  /プロジェクト/, /長期/, /本格/, /プロダクト/,
+]
+
+function determineRoute(text: string): ClarifyRoute {
+  const oneShotScore = ONE_SHOT_SIGNALS.filter(kw => kw.test(text)).length
+  const fullScore = FULL_CDD_SIGNALS.filter(kw => kw.test(text)).length
+
+  // ワンショットのシグナルが強く、フルのシグナルがない場合
+  if (oneShotScore >= 1 && fullScore === 0) return 'one-shot'
+
+  return 'full'
+}
+
 // --- エクスポート ---
 
 export function clarifyIdea(input: ClarifyIdeaInput): ClarifyIdeaResult {
   const { raw_idea, existing_context } = input
+  const combined = raw_idea + (existing_context ? '\n' + existing_context : '')
   const understood = extractFromInput(raw_idea)
+  const route = determineRoute(combined)
   const axes = checkAxisFulfillment(raw_idea, existing_context ?? null)
   const fulfillment = axes.filter(a => a.filled).length
   const mode = determineMode(fulfillment)
   const questions = selectQuestions(axes)
-  const similar_approaches = findSimilarApproaches(raw_idea + (existing_context ?? ''))
+  const similar_approaches = findSimilarApproaches(combined)
 
-  return {
+  const result: ClarifyIdeaResult = {
+    route,
     understood,
     axes,
     fulfillment,
@@ -201,4 +229,10 @@ export function clarifyIdea(input: ClarifyIdeaInput): ClarifyIdeaResult {
     questions,
     similar_approaches,
   }
+
+  if (route === 'one-shot') {
+    result.one_shot_suggestion = '壁打ち不要で、そのまま実装に進めそうです。CDD で丁寧に設計しますか？'
+  }
+
+  return result
 }

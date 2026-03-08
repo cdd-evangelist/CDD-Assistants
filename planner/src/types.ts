@@ -69,7 +69,10 @@ export interface SimilarApproach {
   relevance: string
 }
 
+export type ClarifyRoute = 'one-shot' | 'full'
+
 export interface ClarifyIdeaResult {
+  route: ClarifyRoute
   understood: {
     core_desire: string | null
     pain_point: string | null
@@ -80,6 +83,7 @@ export interface ClarifyIdeaResult {
   mode: 'diverge' | 'converge' | 'transition'
   questions: TemplateQuestion[]
   similar_approaches: SimilarApproach[]
+  one_shot_suggestion?: string   // route が 'one-shot' のときの案内メッセージ
 }
 
 // --- design_context ---
