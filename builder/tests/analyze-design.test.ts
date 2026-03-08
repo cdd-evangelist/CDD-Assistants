@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { analyzeDesign } from '../src/recipe-engine/analyze-design.js'
-import { parseFrontmatter } from '../src/recipe-engine/analyze-design.js'
+import { parseFrontmatter, detectDrift } from '../src/recipe-engine/analyze-design.js'
+
+const exec = promisify(execFile)
 
 let tmpDir: string
 
@@ -195,5 +199,98 @@ describe('analyzeDesign', () => {
     const jpDoc = result.documents.find(d => d.path === 'jp.md')!
     const enDoc = result.documents.find(d => d.path === 'en.md')!
     expect(jpDoc.estimated_tokens).toBeGreaterThan(enDoc.estimated_tokens)
+  })
+})
+
+// --- detectDrift ---
+
+describe('detectDrift', () => {
+  let gitDir: string
+
+  async function git(...args: string[]) {
+    return exec('git', args, { cwd: gitDir })
+  }
+
+  beforeEach(async () => {
+    gitDir = await mkdtemp(join(tmpdir(), 'drift-test-'))
+    await git('init')
+    await git('config', 'user.email', 'test@test.com')
+    await git('config', 'user.name', 'Test')
+  })
+
+  afterEach(async () => {
+    await rm(gitDir, { recursive: true, force: true })
+  })
+
+  it('リファレンスがなければ空配列を返す', async () => {
+    const warnings = await detectDrift(gitDir)
+    expect(warnings).toEqual([])
+  })
+
+  it('リファレンス後に変更がなければ空配列を返す', async () => {
+    // 初期コミット
+    await writeFile(join(gitDir, 'src.ts'), 'const x = 1')
+    await git('add', '.')
+    await git('commit', '-m', 'initial')
+
+    // 1秒待ってリファレンス作成（mtime がコミット後になるように）
+    await new Promise(r => setTimeout(r, 1100))
+    await mkdir(join(gitDir, 'docs', 'ref'), { recursive: true })
+    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference')
+    await git('add', '.')
+    await git('commit', '-m', 'add reference')
+
+    const warnings = await detectDrift(gitDir)
+    expect(warnings).toEqual([])
+  })
+
+  it('リファレンス後にコード変更があれば警告を返す', async () => {
+    // 初期コミット + リファレンス
+    await mkdir(join(gitDir, 'docs', 'ref'), { recursive: true })
+    await writeFile(join(gitDir, 'src.ts'), 'const x = 1')
+    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference')
+    await git('add', '.')
+    await git('commit', '-m', 'initial with reference')
+
+    // 1秒待ってからコード変更（mtime の差を確保）
+    await new Promise(r => setTimeout(r, 1100))
+    await writeFile(join(gitDir, 'src.ts'), 'const x = 2')
+    await git('add', '.')
+    await git('commit', '-m', 'modify src')
+
+    const warnings = await detectDrift(gitDir)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].reference).toContain('chunk-01-ref.md')
+    expect(warnings[0].commits_since).toBeGreaterThanOrEqual(1)
+    expect(warnings[0].changed_files).toContain('src.ts')
+    expect(warnings[0].message).toContain('リファレンス生成後')
+  })
+
+  it('docs/ref/ 内の変更は検出対象から除外する', async () => {
+    await mkdir(join(gitDir, 'docs', 'ref'), { recursive: true })
+    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference v1')
+    await git('add', '.')
+    await git('commit', '-m', 'initial')
+
+    await new Promise(r => setTimeout(r, 1100))
+    // リファレンス自身だけを変更
+    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference v2')
+    await git('add', '.')
+    await git('commit', '-m', 'update reference only')
+
+    const warnings = await detectDrift(gitDir)
+    // docs/ref/ の変更はフィルタされるので、changed_files が空 → 警告なし
+    expect(warnings).toEqual([])
+  })
+
+  it('git リポジトリでなければ空配列を返す', async () => {
+    const nonGitDir = await mkdtemp(join(tmpdir(), 'no-git-'))
+    await mkdir(join(nonGitDir, 'docs', 'ref'), { recursive: true })
+    await writeFile(join(nonGitDir, 'docs', 'ref', 'ref.md'), '# Ref')
+
+    const warnings = await detectDrift(nonGitDir)
+    expect(warnings).toEqual([])
+
+    await rm(nonGitDir, { recursive: true, force: true })
   })
 })
