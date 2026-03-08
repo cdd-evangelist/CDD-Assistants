@@ -199,13 +199,17 @@ Step 3: 各レイヤー内でチャンクに分割
 ```
 
 **出力:**
+
+`split_chunks` は機械的に分割可能な範囲でチャンク候補を生成する。
+`expected_outputs` や `completion_criteria` は人がレビューで具体化する前提のため、初期値は汎用的な内容になる。
+
 ```json
 {
   "chunks": [
     {
       "id": "chunk-01",
       "name": "データベーススキーマ",
-      "description": "ghost.db の5テーブル作成 + マイグレーション",
+      "description": "BasicDesign.md に基づく実装",
       "source_docs": [
         {
           "path": "BasicDesign.md",
@@ -213,20 +217,14 @@ Step 3: 各レイヤー内でチャンクに分割
           "include": "partial"
         }
       ],
-      "expected_outputs": [
-        "src/db/schema.sql",
-        "src/db/migrations/001_initial.sql",
-        "src/db/connection.ts",
-        "tests/db/schema.test.ts"
-      ],
-      "completion_criteria": [
-        "5テーブルが作成される",
-        "マイグレーションが冪等に実行できる",
-        "テストが通る"
-      ],
+      "expected_outputs": [],
+      "completion_criteria": ["テストが通る"],
+      "implementation_prompt_template": "以下の設計に基づき、データベーススキーマ を実装してください。\n\n{source_content}",
+      "reference_doc": "docs/ref/chunk-01-データベーススキーマ.md",
       "depends_on": [],
       "estimated_input_tokens": 2500,
-      "estimated_output_tokens": 4000
+      "estimated_output_tokens": 3750,
+      "validation_context": "UC-1: 初期セットアップで ghost.db が作成される"
     },
     {
       "id": "chunk-02",
@@ -247,11 +245,35 @@ Step 3: 各レイヤー内でチャンクに分割
     ["chunk-02", "chunk-03"],
     ["chunk-04"],
     ...
+  ],
+  "needs_review": true,
+  "review_notes": [
+    "各チャンクの expected_outputs を設定してください",
+    "各チャンクの implementation_prompt_template を具体化してください",
+    "各チャンクの completion_criteria を具体化してください"
   ]
 }
 ```
 
 `execution_order` は DAG のレベル順。同一レベルのチャンクは並列実行可能。
+
+`needs_review` は常に `true` を返す。`split_chunks` は機械的に分割するだけで、`expected_outputs` や `completion_criteria` の具体化は人の判断が必要。`review_notes` にレビュー指示が含まれる。
+
+**DraftChunk 中間型:**
+
+`split_chunks` の出力チャンクは最終的な `Chunk` ではなく `DraftChunk` 中間型。`export_recipe` が設計文書の内容を埋め込んで `Chunk` に変換する。
+
+```
+DraftChunk（split_chunks の出力）
+  ├── implementation_prompt_template  … {source_content} プレースホルダを含むテンプレート
+  └── source_content なし            … まだ設計文書の内容は埋め込まれていない
+
+        ↓ export_recipe で変換
+
+Chunk（recipe.json の最終形）
+  ├── implementation_prompt           … プレースホルダ解決済みの完全なプロンプト
+  └── source_content                  … 設計文書の該当セクションが埋め込み済み
+```
 
 ### 3.3 `validate_refs`
 
@@ -270,13 +292,17 @@ Step 3: 各レイヤー内でチャンクに分割
 
 **チェック項目:**
 
-| チェック | 内容 |
-|---------|------|
-| 未解決参照 | `[[wiki-link]]` のリンク切れ |
-| テーブル名不一致 | 文書Aの `episode_memories` と文書Bの `episodes` が同じものを指していないか |
-| ユースケース欠番 | UC-1〜13 / AC-1〜7 に抜け漏れがないか |
-| フロー図カバレッジ | operation-flows が主要ユースケースを網羅しているか |
-| ポリシー設定漏れ | ghost-policy-spec に記載のキーが他文書で言及されているか |
+| チェック | 内容 | v0.1 |
+|---------|------|------|
+| 未解決参照 | `[[wiki-link]]` のリンク切れ | 実装済み |
+| ユースケース欠番 | UC-1〜13 / AC-1〜7 に抜け漏れがないか | 実装済み |
+| セクション参照 | `{ファイル名} §{番号}` 形式の参照先が存在するか | 実装済み |
+| テーブル名不一致 | 文書Aの `episode_memories` と文書Bの `episodes` が同じものを指していないか | 未実装 |
+| フロー図カバレッジ | operation-flows が主要ユースケースを網羅しているか | 未実装 |
+| ポリシー設定漏れ | ghost-policy-spec に記載のキーが他文書で言及されているか | 未実装 |
+
+v0.1 では構造的な参照整合性（リンク切れ、欠番、セクション参照）に絞って実装。
+意味的な整合性チェック（テーブル名不一致、カバレッジ、ポリシー漏れ）は将来バージョンで追加予定。
 
 **出力:**
 ```json
@@ -363,7 +389,7 @@ Step 3: 各レイヤー内でチャンクに分割
 1. recipe.json を読み込み、構造を検証
 2. 各チャンクの状態を `pending` で初期化
 3. 依存グラフから即座に実行可能なチャンクを特定
-4. 実行状態ファイル（`execution-state.json`）を生成
+4. 実行状態ファイルを生成（ファイル名は `{レシピ名}-state.json`。例: `recipe.json` → `recipe-state.json`）
 
 **出力:**
 ```json
@@ -371,7 +397,7 @@ Step 3: 各レイヤー内でチャンクに分割
   "project": "AI-Ghost-Shell",
   "total_chunks": 17,
   "ready_chunks": ["chunk-01"],
-  "execution_state_path": "path/to/execution-state.json"
+  "execution_state_path": "path/to/recipe-state.json"
 }
 ```
 
@@ -461,8 +487,14 @@ chunk-04 の source_content に含まれる:
 | レベル | 内容 | 自動化 |
 |--------|------|--------|
 | ファイル存在 | expected_outputs が全て存在するか | 完全自動 |
-| テスト通過 | テストファイルが pass するか | 完全自動 |
+| テスト通過 | テストファイルが pass するか | 完全自動（条件付き） |
 | 基準照合 | completion_criteria を満たすか | 一部自動（テスト結果で判断可能なもの） |
+
+テスト実行の前提条件:
+- `generated_files` に `.test.`, `.spec.`, `__tests__` を含むファイルがある
+- `{working_dir}/node_modules` が存在する（なければテスト実行をスキップ）
+- テスト実行タイムアウト: 60秒
+- テストコマンド: `npx {tech_stack.test} run {テストファイル}`
 
 **出力:**
 ```json
@@ -737,6 +769,13 @@ complete_chunk("chunk-03") ──→ 検証
 
 サブエージェントは実装 + テスト + リファレンス作成を一括で行い、
 Opus がリファレンスと設計文書を照合した上で `complete_chunk` を呼ぶ。
+
+**実装詳細:**
+
+- `claude` CLI を `-p`（非対話モード）で起動し、`--max-turns 30` で実行
+- 許可ツール: `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`
+- タイムアウト: 5分（300,000ms）、出力バッファ上限: 10MB
+- 生成ファイルの検出: 実行前後で `working_dir` 内の全ファイルの mtime を比較し、新規または更新されたファイルを `generated_files` として返す（`node_modules`, `.git` は除外）
 
 **local-llm アダプタ:**
 
