@@ -3,7 +3,7 @@
 ## 1. 概要
 
 CDD-Builder は、完成した設計文書群を読み取り、LLM が実装可能な粒度に分割し、自律的に実行する MCP サーバー。
-CDD（Character Driven Development）の「設計は精密に、実装はシンプルに」を実現するための **設計→実装の自動翻訳・実行エンジン**。
+CDD（Chat/Character/Chart Driven Development）の「設計は精密に、実装はシンプルに」という開発思想を実現するための **設計→実装の自動翻訳・実行エンジン**。
 
 ### 解決する問題
 
