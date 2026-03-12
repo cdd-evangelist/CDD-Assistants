@@ -2,28 +2,8 @@
 
 ## 概要
 
-Builder の実行トリガーは2種類ある:
-
-1. **対話モード** — 会話中に人が「実装お願い」と指示
-2. **ヘッドレスモード** — cron / スクリプトが `claude -p` で自動起動
-
-どちらのモードでも、Builder MCP がレシピを管理し、サブエージェント（Sonnet/Haiku）が実装を担当する。
+Builder MCP がレシピを管理し、サブエージェント（Sonnet/Haiku）が実装を担当する。
 Opus はオーケストレーターとして温存する。
-
-### 背景: トークンウィンドウの活用
-
-Claude Code Pro は 5 時間ごとにトークン枠がリセットされる。
-日中の作業時間以外（就寝中・出社中）の枠が未消化になっている。
-
-ヘッドレスモードは、この空きウィンドウを自動実装に活用する仕組み。
-
-```
-  0時    5時   10時   15時   20時   24時
-  |------|------|------|------|------|
-  [sleep ][出社          ][帰宅    ]
-  ↑cron   ↑cron          ↑対話モード
-  自動実装  自動実装        人がレビュー+指示
-```
 
 ---
 
@@ -32,9 +12,7 @@ Claude Code Pro は 5 時間ごとにトークン枠がリセットされる。
 | ID | ユースケース | トリガー |
 |----|------------|---------|
 | B-1 | 会話中に即時実装指示 | 対話 |
-| B-2 | 寝る前にキューに積む → 夜間実装 | ヘッドレス |
-| B-3 | 出社前にキューに積む → 日中実装 | ヘッドレス |
-| B-4 | 翌朝/帰宅後に結果レビュー | 対話 |
+| B-4 | 結果レビュー | 対話 |
 | B-5 | 失敗チャンクのやり直し指示 | 対話 |
 
 ---
@@ -87,78 +65,12 @@ sequenceDiagram
 
 ---
 
-## B-2: 寝る前にキューに積む
-
-**アクター:** 人 + Claude Code (Opus) + cron
-
-**前提条件:**
-- recipe.json が生成済み
-- execution-state.json に進捗状態がある
-
-**フロー:**
-
-```mermaid
-sequenceDiagram
-    participant H as 人
-    participant O as Opus
-    participant B as Builder MCP
-
-    H->>O: 「今日はここまで。残りを夜間に回して」
-    O->>B: execution_status()
-    B-->>O: 5/17 done, ready: [chunk-06, chunk-07]
-
-    O->>H: 「chunk-06, 07 が実行可能。<br/>夜間ウィンドウ（0:00, 5:00）で<br/>自動実装を回す？」
-    H->>O: 「お願い」
-
-    Note over O: cron エントリを確認・有効化
-    O->>H: 「セットした。おやすみ」
-```
-
-```mermaid
-sequenceDiagram
-    participant CR as cron (0:00)
-    participant C as claude -p
-    participant B as Builder MCP
-    participant S as Sonnet
-
-    CR->>C: claude -p "recipe.json の次チャンクを実装"
-    C->>B: load_recipe()
-    C->>B: next_chunks()
-    B-->>C: [chunk-06, chunk-07]
-
-    C->>S: Agent(sonnet, chunk-06.prompt)
-    S-->>C: 完了
-    C->>B: complete_chunk("chunk-06")
-
-    C->>S: Agent(sonnet, chunk-07.prompt)
-    S-->>C: 完了
-    C->>B: complete_chunk("chunk-07")
-
-    C->>B: execution_status()
-    Note over C: 7/17 done → execution-state.json 更新
-```
-
----
-
-## B-3: 出社前にキューに積む
-
-B-2 と同じ構造。トリガーが朝の cron ウィンドウになるだけ。
-
-```
-06:30  人: 「出社前に積んでおく。日中のウィンドウで回して」
-       → execution-state.json の ready chunks を確認
-       → cron が 10:00, 15:00 のウィンドウで実行
-18:00  人: 帰宅 → B-4 のフローへ
-```
-
----
-
-## B-4: 翌朝/帰宅後に結果レビュー
+## B-4: 結果レビュー
 
 **アクター:** 人 + Claude Code (Opus)
 
 **前提条件:**
-- ヘッドレスモードで実装が進んだ後
+- 実装が進んだ後
 
 **フロー:**
 
@@ -240,19 +152,15 @@ sequenceDiagram
 ```mermaid
 graph LR
     B1[B-1: 即時実装] --> B4[B-4: 結果レビュー]
-    B2[B-2: 夜間キュー] --> B4
-    B3[B-3: 日中キュー] --> B4
     B4 --> B5[B-5: やり直し]
     B5 --> B1
 
     style B1 fill:#4a9,color:#fff
-    style B2 fill:#59d,color:#fff
-    style B3 fill:#59d,color:#fff
     style B4 fill:#d84,color:#fff
     style B5 fill:#c55,color:#fff
 ```
 
-**緑:** 対話モード / **青:** ヘッドレスモード / **橙:** レビュー / **赤:** リカバリ
+**緑:** 実装 / **橙:** レビュー / **赤:** リカバリ
 
 ---
 
