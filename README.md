@@ -131,28 +131,23 @@ cd CDD-Assistants
 ./setup.sh builder    # Builder のみ
 ```
 
-セットアップが完了すると、MCP 設定に必要なパスが表示されます。
+### Claude Code への MCP 登録
 
-### Claude Code の MCP 設定
+ビルド後、以下のコマンドで Claude Code に MCP サーバーを自動登録できます:
 
-`~/.claude/settings.json` に追加（パスはセットアップ時に表示されたものを使用）:
-
-```json
-{
-  "mcpServers": {
-    "cdd-planner": {
-      "command": "node",
-      "args": ["path/to/planner/dist/index.js"]
-    },
-    "cdd-builder": {
-      "command": "node",
-      "args": ["path/to/builder/dist/index.js"]
-    }
-  }
-}
+```bash
+./setup.sh mcp-install        # 現在のプロジェクトに登録
+./setup.sh mcp-install --all  # 全プロジェクトに一括登録
 ```
 
-`path/to/` の部分は実際のインストール先に置き換えてください。
+登録後、Claude Code を再起動すると反映されます。
+
+登録を解除するには:
+
+```bash
+./setup.sh mcp-uninstall        # 現在のプロジェクトから解除
+./setup.sh mcp-uninstall --all  # 全プロジェクトから一括解除
+```
 
 ## ドキュメント
 

@@ -8,7 +8,8 @@
 
 ## Build & Test
 
-- セットアップ: `./setup.sh` (all | planner | builder)
+- セットアップ: `./setup.sh` (all | planner | builder | mcp-install | mcp-uninstall)
+- MCP 登録: `./setup.sh mcp-install [--all]` / 解除: `./setup.sh mcp-uninstall [--all]`
 - Planner ビルド: `cd planner && npm run build`
 - Builder ビルド: `cd builder && npm run build`
 - 全テスト実行: `npx vitest run`（ルートディレクトリから）
