@@ -1,5 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises'
-import { resolve, join, basename } from 'node:path'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { resolve, join, basename, dirname } from 'node:path'
 import type {
   ExportRecipeInput,
   ExportRecipeResult,
@@ -142,11 +142,16 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
   const {
     project,
     tech_stack,
-    chunks: draftChunks,
+    chunks: rawChunks,
     docs_dir: docsDir,
     output_path: outputPath,
     include_source_content = true,
   } = input
+
+  // split_chunks の出力オブジェクトがそのまま渡された場合を許容する
+  const draftChunks: DraftChunk[] = Array.isArray(rawChunks)
+    ? rawChunks
+    : (rawChunks as { chunks?: DraftChunk[] }).chunks ?? []
 
   const allWarnings: string[] = []
   const resolvedChunks: Chunk[] = []
@@ -193,8 +198,9 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
     execution_order: executionOrder,
   }
 
-  // 出力
+  // 出力（親ディレクトリが無ければ作成）
   const absOutputPath = resolve(outputPath)
+  await mkdir(dirname(absOutputPath), { recursive: true })
   await writeFile(absOutputPath, JSON.stringify(recipe, null, 2), 'utf-8')
 
   return {

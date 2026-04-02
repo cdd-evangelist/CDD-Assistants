@@ -288,6 +288,77 @@ describe('exportRecipe', () => {
     expect(recipe.chunks[0].implementation_prompt).toContain('{{file:src/db/connection.ts}}')
   })
 
+  it('出力先の親ディレクトリが存在しなくても自動作成する', async () => {
+    await writeFile(join(docsDir, 'a.md'), '# A\n内容')
+
+    const input: ExportRecipeInput = {
+      project: 'Test',
+      tech_stack: { language: 'TypeScript' },
+      docs_dir: docsDir,
+      output_path: join(tmpDir, 'nested', 'deep', 'recipe.json'),
+      chunks: [
+        {
+          id: 'chunk-01',
+          name: 'テスト',
+          description: 'テスト',
+          depends_on: [],
+          source_docs: [{ path: 'a.md', sections: ['全体'], include: 'full' }],
+          implementation_prompt_template: '{source_content}',
+          expected_outputs: [],
+          completion_criteria: [],
+          reference_doc: 'docs/ref/chunk-01-ref.md',
+          estimated_input_tokens: 500,
+          estimated_output_tokens: 500,
+        },
+      ],
+    }
+
+    const result = await exportRecipe(input)
+    expect(result.recipe_path).toContain('nested/deep/recipe.json')
+    const recipe: Recipe = JSON.parse(await readFile(result.recipe_path, 'utf-8'))
+    expect(recipe.chunks).toHaveLength(1)
+  })
+
+  it('split_chunks の出力オブジェクトをそのまま渡しても動作する', async () => {
+    await writeFile(join(docsDir, 'a.md'), '# A\n内容')
+
+    // split_chunks は { chunks, execution_order, needs_review, review_notes } を返す
+    const splitResult = {
+      chunks: [
+        {
+          id: 'chunk-01',
+          name: 'テスト',
+          description: 'テスト',
+          depends_on: [],
+          source_docs: [{ path: 'a.md', sections: ['全体'], include: 'full' as const }],
+          implementation_prompt_template: '{source_content}',
+          expected_outputs: [],
+          completion_criteria: [],
+          reference_doc: 'docs/ref/chunk-01-ref.md',
+          estimated_input_tokens: 500,
+          estimated_output_tokens: 500,
+        },
+      ],
+      execution_order: [['chunk-01']],
+      needs_review: false,
+      review_notes: [],
+    }
+
+    const input: ExportRecipeInput = {
+      project: 'Test',
+      tech_stack: { language: 'TypeScript' },
+      docs_dir: docsDir,
+      output_path: join(tmpDir, 'recipe.json'),
+      // chunks にオブジェクト全体を渡す（LLM がやりがちなパターン）
+      chunks: splitResult as any,
+    }
+
+    const result = await exportRecipe(input)
+    const recipe: Recipe = JSON.parse(await readFile(result.recipe_path, 'utf-8'))
+    expect(recipe.chunks).toHaveLength(1)
+    expect(recipe.chunks[0].source_content).toContain('# A')
+  })
+
   it('include_source_content=false では参照のみ出力する', async () => {
     await writeFile(join(docsDir, 'big.md'), '# Big\n' + 'x'.repeat(10000))
 
