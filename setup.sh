@@ -7,7 +7,6 @@ OPTION="${2:-}"
 
 PLANNER_PATH="$SCRIPT_DIR/planner/dist/index.js"
 BUILDER_PATH="$SCRIPT_DIR/builder/dist/index.js"
-SETTINGS_JSON="$HOME/.claude/settings.json"
 CLAUDE_JSON="$HOME/.claude.json"
 
 usage() {
@@ -30,21 +29,22 @@ usage() {
 mcp_install() {
   local install_all="${1:-}"
 
-  # 1) settings.json にグローバル登録
-  if [ ! -f "$SETTINGS_JSON" ]; then
-    echo "エラー: $SETTINGS_JSON が見つかりません。Claude Code を一度起動してください。"
+  # 1) ~/.claude.json にグローバル登録
+  #    ※ mcpServers は settings.json ではなく .claude.json に記述する必要がある
+  if [ ! -f "$CLAUDE_JSON" ]; then
+    echo "エラー: $CLAUDE_JSON が見つかりません。Claude Code を一度起動してください。"
     exit 1
   fi
 
   node -e "
     const fs = require('fs');
-    const path = '$SETTINGS_JSON';
+    const path = '$CLAUDE_JSON';
     const data = JSON.parse(fs.readFileSync(path, 'utf8'));
     if (!data.mcpServers) data.mcpServers = {};
     let changed = false;
     const want = {
-      'cdd-planner': { command: 'node', args: ['$PLANNER_PATH'] },
-      'cdd-builder': { command: 'node', args: ['$BUILDER_PATH'] },
+      'cdd-planner': { type: 'stdio', command: 'node', args: ['$PLANNER_PATH'], env: {} },
+      'cdd-builder': { type: 'stdio', command: 'node', args: ['$BUILDER_PATH'], env: {} },
     };
     for (const [k, v] of Object.entries(want)) {
       const cur = data.mcpServers[k];
@@ -55,18 +55,13 @@ mcp_install() {
     }
     if (changed) {
       fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-      console.log('settings.json: cdd-planner, cdd-builder を登録しました');
+      console.log('.claude.json (global): cdd-planner, cdd-builder を登録しました');
     } else {
-      console.log('settings.json: 既に登録済み');
+      console.log('.claude.json (global): 既に登録済み');
     }
   "
 
   # 2) .claude.json にプロジェクト別登録
-  if [ ! -f "$CLAUDE_JSON" ]; then
-    echo ".claude.json が見つかりません。プロジェクト別登録をスキップします。"
-    return
-  fi
-
   node -e "
     const fs = require('fs');
     const path = '$CLAUDE_JSON';
@@ -125,11 +120,11 @@ mcp_install() {
 mcp_uninstall() {
   local uninstall_all="${1:-}"
 
-  # 1) settings.json からグローバル削除
-  if [ -f "$SETTINGS_JSON" ]; then
+  # 1) ~/.claude.json からグローバル削除
+  if [ -f "$CLAUDE_JSON" ]; then
     node -e "
       const fs = require('fs');
-      const path = '$SETTINGS_JSON';
+      const path = '$CLAUDE_JSON';
       const data = JSON.parse(fs.readFileSync(path, 'utf8'));
       let changed = false;
       for (const k of ['cdd-planner', 'cdd-builder']) {
@@ -140,9 +135,9 @@ mcp_uninstall() {
       }
       if (changed) {
         fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
-        console.log('settings.json: cdd-planner, cdd-builder を削除しました');
+        console.log('.claude.json (global): cdd-planner, cdd-builder を削除しました');
       } else {
-        console.log('settings.json: 登録なし（スキップ）');
+        console.log('.claude.json (global): 登録なし（スキップ）');
       }
     "
   fi
