@@ -30,7 +30,7 @@ builder/src/
 | `types.ts` | レシピ、レシピエンジン、実行状態、実行アダプタ、ツール出力の型を一括定義する |
 | `analyze-design.ts` | 設計文書群を読み込み、フロントマター解析・レイヤー分類・依存グラフ構築・トークン推定・tech_stack 抽出・ドリフト検出を行う |
 | `split-chunks.ts` | `analyze_design` の出力を受け取り、レイヤーマッピング・チャンク候補生成・依存関係決定・execution_order 算出を行う |
-| `validate-refs.ts` | 設計文書間の wiki-link 検証・UC/AC 欠番検出・セクション参照チェックを行う |
+| `validate-refs.ts` | 設計文書間の Markdown リンク検証・UC/AC 欠番検出・セクション参照チェックを行う |
 | `export-recipe.ts` | `DraftChunk[]` を `Recipe` に変換し、設計文書の内容を埋め込んで JSON ファイルとして出力する |
 | `load-recipe.ts` | レシピ JSON を読み込み、全チャンクを `pending` 状態で初期化した実行状態ファイルを生成する |
 | `next-chunks.ts` | 実行状態とレシピを読み、依存解決済みチャンクの `PreparedChunk` を組み立てる |
@@ -178,7 +178,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 
 - `parseFrontmatter`: `---` で囲まれた YAML フロントマターを簡易パーサーで解析する。`key: value` 形式と `- item` 形式の配列に対応する。対応フィールドは `status`, `layer`, `decisions`, `open_questions`
 - `extractSectionNames`: `##` 〜 `####` レベルの見出しテキストを収集する
-- `extractWikiLinks`: インラインコード内を除外した上で `[[target]]` 形式のリンクターゲットを抽出する。`#` 以降のアンカー部分は除去し、`.md` 拡張子も除去する
+- `extractMarkdownLinks`: インラインコード内を除外した上で `[表示名](ファイル名.md)` 形式のリンクターゲットを抽出する。`#` 以降のアンカー部分は除去し、`.md` 拡張子も除去する
 - `estimateTokens`: CJK 文字は 1 文字 = 2 トークン、ASCII 文字は 1 文字 = 0.25 トークンとして推定する
 
 **ステップ 3: decisions.jsonl 読み込み**
@@ -187,7 +187,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 
 **ステップ 4: 依存グラフ構築**
 
-- 各文書の wiki-link から、同一文書群内（`doc_paths` で渡された文書群）に存在するリンクのみを依存として抽出する。自己参照は除外する
+- 各文書の Markdown リンクから、同一文書群内（`doc_paths` で渡された文書群）に存在するリンクのみを依存として抽出する。自己参照は除外する
 - `decisions.jsonl` の各決定事項について、`affected_docs` に複数文書が含まれる場合、それらの文書間に双方向の依存を追加する
 
 **ステップ 5: レイヤー推定**
@@ -262,7 +262,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 `assignDependencies` 関数で依存関係を設定する:
 
 - 実装レイヤー間の依存: `data` -> `logic` -> `interface` -> `test` の順で、後段のレイヤーのチャンクは前段のレイヤーの全チャンクに依存する（保守的な戦略）
-- 文書間の直接依存: wiki-link による参照先文書を含むチャンクを探し、参照先が同一レイヤーまたは下位レイヤーの場合のみ依存に追加する
+- 文書間の直接依存: Markdown リンクによる参照先文書を含むチャンクを探し、参照先が同一レイヤーまたは下位レイヤーの場合のみ依存に追加する
 
 **ステップ 5: execution_order 算出**
 
@@ -284,11 +284,11 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 
 `validateRefs` 関数は以下の 3 種類のチェッカーを実行する。
 
-**チェッカー 1: wiki-link 検証 (`checkWikiLinks`)**
+**チェッカー 1: Markdown リンク検証 (`checkMarkdownLinks`)**
 
-- 各文書の各行について `[[target]]` 形式の wiki-link を検出する
-- インラインコード（バッククォート内）の wiki-link は無視する
-- リンクターゲットが渡された文書群のファイル名（拡張子なし）に存在しない場合、severity `warn`、type `broken_wiki_link` の issue を生成する
+- 各文書の各行について `[表示名](ファイル名.md)` 形式の Markdown リンクを検出する
+- インラインコード（バッククォート内）のリンクは無視する
+- リンクターゲットが渡された文書群のファイル名（拡張子なし）に存在しない場合、severity `warn`、type `broken_link` の issue を生成する
 - locations に `{ファイル名}.md:{行番号}` を記録する
 
 **チェッカー 2: UC/AC 欠番検出 (`checkUsecaseIds`)**

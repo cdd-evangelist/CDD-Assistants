@@ -34,7 +34,7 @@ planner/src/
 | `check-consistency.ts` | 設計文書群の整合性を 5 カテゴリでチェックし、問題を報告する |
 | `check-readiness.ts` | 設計文書群が Builder にハンドオフ可能かを総合判定する |
 | `frontmatter.ts` | `---` で囲まれた YAML フロントマターを簡易パースする |
-| `markdown.ts` | セクション抽出、wiki-link 抽出、トークン推定、ステータス推定、未決事項抽出、レイヤー推定を行う |
+| `markdown.ts` | セクション抽出、Markdown リンク抽出、トークン推定、ステータス推定、未決事項抽出、レイヤー推定を行う |
 | `decisions.ts` | `decisions.jsonl` の読み込み・追記・ID 連番生成を行う |
 
 ---
@@ -240,8 +240,8 @@ async function checkReadiness(
 #### 処理の流れ
 
 1. **ディレクトリスキャン**: `readdir` で `project_dir` 内の `.md` ファイルをソートして列挙する
-2. **文書パース**: 各ファイルについて `parseFrontmatter` でフロントマターを解析し、`ParsedDocument` オブジェクトを構築する。`extractSectionNames`, `extractWikiLinks`, `estimateTokens` をそれぞれ適用する
-3. **依存グラフ構築**: 各文書の wiki-link から、プロジェクト内に実在する文書への参照を `dependencyGraph` として構築する。自己参照は除外する。キーは `ファイル名.md`、値は参照先の `ファイル名.md` の配列
+2. **文書パース**: 各ファイルについて `parseFrontmatter` でフロントマターを解析し、`ParsedDocument` オブジェクトを構築する。`extractSectionNames`, `extractMarkdownLinks`, `estimateTokens` をそれぞれ適用する
+3. **依存グラフ構築**: 各文書の Markdown リンクから、プロジェクト内に実在する文書への参照を `dependencyGraph` として構築する。自己参照は除外する。キーは `ファイル名.md`、値は参照先の `ファイル名.md` の配列
 4. **逆参照マップ構築**: `dependencyGraph` を反転して `referencedByMap` を構築する
 5. **決定事項の文書割り当て**: `loadDecisions` で `decisions.jsonl` を読み込み、各決定の `affects` フィールドに基づいて文書ごとの決定 ID リストを構築する
 6. **DocumentSummary 組み立て**: フロントマターの `status` / `layer` がある場合はそれを使い、ない場合は `inferDocStatus` / `inferLayer` でヒューリスティックに推定する。`decisions` と `open_questions` はフロントマター由来と本文抽出の和集合（重複排除）
@@ -289,14 +289,14 @@ async function checkReadiness(
 
 2 種類のチェックを行う:
 
-1. **wiki-link リンク切れ**: 各文書の `[[wiki-link]]` のリンク先が、プロジェクト内の `.md` ファイル名（拡張子なし）として存在するか確認する。存在しない場合、severity `warn` で報告する
+1. **Markdown リンク切れ**: 各文書の `[表示名](ファイル名.md)` 形式のリンク先が、プロジェクト内の `.md` ファイルとして存在するか確認する。存在しない場合、severity `warn` で報告する
 2. **UC/AC 欠番**: 全文書から `UC-N` / `AC-N` パターンの ID を収集し、1 から最大値までの連番に欠番がないか確認する。欠番がある場合、severity `warn` で報告する
 
 ##### coverage（カバレッジ）
 
 1. `UC-N` または `AC-N` を含む文書を「ユースケース文書」として特定する
 2. ユースケース文書がない場合（かつ文書が 2 件以上ある場合）、severity `info` で報告する
-3. ユースケース文書がある場合、ユースケース文書の wiki-link から参照されていない設計文書を severity `info` で報告する
+3. ユースケース文書がある場合、ユースケース文書の Markdown リンクから参照されていない設計文書を severity `info` で報告する
 
 ##### decisions（決定事項の整合性）
 
@@ -368,13 +368,12 @@ YAML フロントマター（`---` で囲まれた部分）を簡易パースす
 
 `##` 〜 `####` レベルの見出し行からセクション名を抽出する。`#`（h1）は対象外。
 
-#### `extractWikiLinks(content: string): string[]`
+#### `extractMarkdownLinks(content: string): string[]`
 
-`[[リンク名]]` 形式の wiki-link を抽出する。重複排除あり。
+`[表示名](ファイル名.md)` 形式の Markdown リンクを抽出する。重複排除あり。
 
 - インラインコード（`` ` `` で囲まれた部分）は事前に除去する
-- `[[リンク名#セクション]]` のセクション指定は無視し、リンク名部分のみ取得する
-- `[[リンク名|表示名]]` のパイプ前部分（リンク名）のみ取得する
+- `[表示名](ファイル名.md#セクション)` のアンカー指定は無視し、ファイル名部分のみ取得する
 - 末尾 `.md` は除去する
 
 #### `estimateTokens(text: string): number`
@@ -471,7 +470,7 @@ YAML フロントマター（`---` で囲まれた部分）を簡易パースす
 | `Decision` | interface | 決定事項。`id`, `decision`, `rationale`, `affects`, `supersedes`, `created_at` |
 | `IssueSeverity` | union | `'error' \| 'warn' \| 'info'` |
 | `Issue` | interface | 問題報告。`category`, `severity`, `message`, `suggestion?`, `locations?` |
-| `ParsedDocument` | interface | パース済み文書。`path`, `name`, `content`, `body`, `frontmatter`, `lines`, `sections`, `wikiLinks`, `estimatedTokens` |
+| `ParsedDocument` | interface | パース済み文書。`path`, `name`, `content`, `body`, `frontmatter`, `lines`, `sections`, `markdownLinks`, `estimatedTokens` |
 
 ### 5.2 ツール固有型
 

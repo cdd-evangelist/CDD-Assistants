@@ -20,7 +20,7 @@
 | 5 | 要更新 | 設計の進化 | `ClaudeCodeExecutor` の具体実装（`listFiles` によるmtime差分検出、`--max-turns 30`、`maxBuffer 10MB`）が設計書に未記載 | **反映済み** §6.2 に実装詳細を追記 |
 | 6 | 要更新 | 設計の進化 | `complete_chunk` の `node_modules` 存在チェックとテスト60秒タイムアウトが設計書に未記載 | **反映済み** §4.3 に追記 |
 | 7 | 軽微 | 説明の粒度 | `estimateTokens` の具体係数（CJK=2トークン/文字、ASCII=0.25トークン/文字）は設計書では未記載 | 通過 |
-| 8 | 軽微 | 説明の粒度 | `extractWikiLinks` のインラインコード除外ロジック、レイヤー推定の4段フォールバック詳細はリファレンスの方が詳細 | 通過 |
+| 8 | 軽微 | 説明の粒度 | `extractMarkdownLinks` のインラインコード除外ロジック、レイヤー推定の4段フォールバック詳細はリファレンスの方が詳細 | 通過 |
 | 9 | 軽微 | 命名の揺れ | 設計書の `tech_stack` 出力例に `platforms`, `platform_notes`, `directory_structure` があるが、リファレンスの型定義ではこれらは optional | 通過 |
 
 ## サマリー
