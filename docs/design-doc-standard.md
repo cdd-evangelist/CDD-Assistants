@@ -108,28 +108,30 @@ execution-engine.md   ←→  src/engine/*.ts
 docs/
 ├── README.md                    ← 文書一覧・導線
 ├── basic-design.md              ← 基本設計（1本）
-├── usecases/                    ← ユースケース（アクター別）
+├── 1-usecases/                  ← ユースケース（アクター別）
 │   ├── user-usecases.md
 │   └── ai-side-usecases.md
-├── features/                    ← 機能設計（人間が承認する単位）
+├── 2-features/                  ← 機能設計（人間が承認する単位）
 │   ├── {機能名}.md
 │   └── ...
-├── details/                     ← 詳細設計（AI が実装する単位）
+├── 3-details/                   ← 詳細設計（AI が実装する単位）
 │   ├── {モジュール名}.md
 │   └── ...
-└── ref/                         ← リファレンス（検証結果、補足資料）
+└── 4-ref/                       ← リファレンス（検証結果、補足資料）
     └── ...
 ```
+
+番号プレフィックスにより、フォルダがアルファベット順ではなく文書階層の順に表示される。
 
 ### 5.2 フォルダの役割
 
 | フォルダ | 内容 | 対応する階層 |
 |---|---|---|
 | `docs/` (ルート) | basic-design.md と README.md | 基本設計 |
-| `usecases/` | アクター別のユースケース文書 | ユースケース |
-| `features/` | 機能単位の設計文書 | 機能設計 |
-| `details/` | 実装コードと対応する詳細仕様 | 詳細設計 |
-| `ref/` | リファレンス、検証結果、補足資料 | — |
+| `1-usecases/` | アクター別のユースケース文書 | ユースケース |
+| `2-features/` | 機能単位の設計文書 | 機能設計 |
+| `3-details/` | 実装コードと対応する詳細仕様 | 詳細設計 |
+| `4-ref/` | リファレンス、検証結果、補足資料 | — |
 
 ### 5.3 docs/README.md
 
@@ -142,14 +144,14 @@ docs/
 - [基本設計書](basic-design.md)
 
 ## ユースケース
-- [ユーザーユースケース](usecases/user-usecases.md)
-- [AI サイドユースケース](usecases/ai-side-usecases.md)
+- [ユーザーユースケース](1-usecases/user-usecases.md)
+- [AI サイドユースケース](1-usecases/ai-side-usecases.md)
 
 ## 機能設計
-- [{機能名}](features/{機能名}.md)
+- [{機能名}](2-features/{機能名}.md)
 
 ## 詳細設計
-- [{モジュール名}](details/{モジュール名}.md)
+- [{モジュール名}](3-details/{モジュール名}.md)
 ```
 
 ### 5.4 複数コンポーネントを含むプロジェクト
@@ -163,16 +165,16 @@ docs/
 ├── roadmap.md
 ├── planner/
 │   ├── basic-design.md
-│   ├── usecases/
-│   ├── features/
-│   ├── details/
-│   └── ref/
+│   ├── 1-usecases/
+│   ├── 2-features/
+│   ├── 3-details/
+│   └── 4-ref/
 └── builder/
     ├── basic-design.md
-    ├── usecases/
-    ├── features/
-    ├── details/
-    └── ref/
+    ├── 1-usecases/
+    ├── 2-features/
+    ├── 3-details/
+    └── 4-ref/
 ```
 
 **判断基準:** コンポーネント分割するのは、以下のいずれかに該当する場合:
@@ -209,7 +211,7 @@ docs/
 
 ### 6.3 命名の指針
 
-- フォルダで階層が分かれるため、`-design` や `-spec` のサフィックスは不要（`features/notebook.md` で十分）
+- フォルダで階層が分かれるため、`-design` や `-spec` のサフィックスは不要（`2-features/notebook.md` で十分）
 - 基本設計と README はプロジェクト間で固定名にする（探しやすさのため）
 - 英語を推奨する（日本語ファイル名はシェルやツールとの相性が悪い）
 
@@ -496,23 +498,23 @@ docs/
 ├── roadmap.md
 ├── planner/
 │   ├── basic-design.md
-│   ├── usecases/
+│   ├── 1-usecases/
 │   │   └── user-usecases.md
-│   ├── features/
+│   ├── 2-features/
 │   │   └── ...
-│   ├── details/
+│   ├── 3-details/
 │   │   └── ...
-│   └── ref/
+│   └── 4-ref/
 │       └── planner-reference.md
 └── builder/
     ├── basic-design.md
-    ├── usecases/
+    ├── 1-usecases/
     │   └── builder-usecases.md
-    ├── features/
+    ├── 2-features/
     │   └── ...
-    ├── details/
+    ├── 3-details/
     │   └── ...
-    └── ref/
+    └── 4-ref/
         ├── builder-reference.md
         └── verification-builder.md
 ```
