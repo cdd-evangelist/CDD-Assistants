@@ -155,77 +155,29 @@ Builder
 
 ### 3.3 統合テストチャンクの自動挿入
 
-`split_chunks` は依存関係グラフから、統合テストチャンクを自動挿入する。各チャンクの Dual-Agent TDD で単体テストはカバーされるが、チャンク間の接続は検証されない。
+単体テストは Dual-Agent TDD で各チャンクがカバーするが、チャンク間の接続はそれだけでは検証されない。`split_chunks` は依存グラフを解析し、合流点・レイヤー境界・全体完了の各位置に統合テストチャンクを自動で挿入する。
 
-**挿入ルール:**
-
-| 条件 | 挿入位置 | テスト内容 |
-|------|---------|-----------|
-| 依存グラフで3チャンク以上が合流するノード | 合流ノードの直後 | 合流元チャンクの出力が正しく連携するか |
-| レイヤー境界（データ層→ロジック層→API層）をまたぐ箇所 | 境界の直後 | 下位レイヤーの出力を上位レイヤーが正しく消費するか |
-| 全チャンク完了後 | 最終チャンクの後 | E2E テスト（主要ユースケースの一気通貫実行） |
-
-統合テストチャンクは `test_requirements` のみで構成され、`implementation_prompt` を持たない。Test Agent がテストを生成し、既存の実装に対して実行する（Red フェーズはスキップ）。
+挿入条件と生成方式の詳細は [実行フロー §整合性保証](2-features/execution-flow.md) を参照。
 
 ### 3.4 既存コードの扱い
 
-チャンク 02 以降は、前のチャンクで生成されたコードを参照する必要がある。
+チャンク 02 以降は、前チャンクで生成されたコードを参照する必要がある。レシピにはファイルパス参照をプレースホルダとして埋め込んでおき、実行時に実際のコードを差し込む方式を採る。こうすることで、レシピ自体は実装時点のコードに依存せず、生成物が進化しても再利用できる。
 
-```
-chunk-04 の入力:
-  - 設計文書: progressive-disclosure.md（該当セクション）
-  - 既存コード: chunk-01 で生成した schema.ts の型定義
-  - 既存コード: chunk-02 で生成した policy.ts のインターフェース
-  → これらを source_content にまとめて渡す
-```
-
-レシピの `source_content` にはファイルパスのプレースホルダを記述し、
-`next_chunks` が実行時に実際のコードを差し込む:
-
-```json
-{
-  "source_content": "{{file:src/db/schema.ts}}\n\n---\n\n## 設計: progressive-disclosure.md\n..."
-}
-```
+プレースホルダ構文と解決処理の詳細は [MCP ツール §next_chunks](3-details/mcp-tools.md) を参照。
 
 ### 3.5 コード規約の伝播
 
-プロジェクトにコード規約がある場合、Builder はそれを検出して各チャンクに伝播する。規約がなければ `tech_stack` の慣例に従って「よしなに」処理する。組織・チームの既存資産を上書きせず、存在すれば優先する、というのが基本姿勢。
+プロジェクトにコード規約がある場合、Builder はそれを検出して各チャンクに伝播する。規約がなければ `tech_stack` の言語・フレームワーク慣例に従って「よしなに」処理する。組織・チームの既存資産を上書きせず、**存在すれば優先する**、というのが基本姿勢。
 
-**検出順序（優先度高→低）:**
-
-1. プロジェクトルートの `AGENTS.md` / `CODING-STANDARDS.md` — 組織・チームの統一規約（人間・AI 共通）
-2. `.editorconfig` / `eslint.config.js` / `.prettierrc` / `ruff.toml` 等 — 機械可読な linter・formatter 設定
-3. `package.json` / `pyproject.toml` の `scripts` セクション — `lint`, `format`, `test` コマンドの呼び出し方
-
-**伝播と検証:**
-
-- `analyze_design` が規約ファイルを収集し、recipe.json の `coding_standards` に記録
-- `next_chunks` が各チャンクの `implementation_prompt` に規約のダイジェストを挿入
-- `complete_chunk` の検証レベルに「規約適合性」を追加し、プロジェクトの linter / formatter を実行して結果を照合に含める
-- 実装が規約から逸脱した場合は Impl Agent に差し戻し（Investigation Agent 経由で原因仕分け）
-
-**フォールバック:**
-
-- 規約ファイルが存在しない個人開発等では、規約検出ステップはスキップされる
-- その場合、Impl Agent は `tech_stack` の言語・フレームワーク慣例（TypeScript なら ESLint 推奨設定、Python なら PEP 8 等）に従う
-- 規約ファイルの解釈が困難な場合は警告を出すが処理は止めない
+規約は「分析時に収集 → 実行時に Agent へ注入 → 完了検証で遵守を確認」という 3 点で一貫して扱う。検出対象ファイルの優先順位、ダイジェストの生成方式、フォールバック挙動の詳細は [実行フロー §コード規約](2-features/execution-flow.md) および [MCP ツール §analyze_design / next_chunks / complete_chunk](3-details/mcp-tools.md) を参照。
 
 ### 3.6 テスト品質の担保
 
-Dual-Agent TDD で共有バイアスを排除してもテストそのものが弱い可能性は残る:
+Dual-Agent TDD で共有バイアスを排除しても、テストそのものが弱い可能性は残る（何も検証していない assert、分岐網羅不足、境界値の踏み漏れ等）。Builder は静的チェックと Mutation Testing の 2 段階でこれに対処する。
 
-- `assert true` 相当の、何も検証していないテスト
-- if/else の片方の分岐しかカバーしていないテスト
-- 境界値を踏んでいないテスト
+**原則: カバレッジ ≠ テスト有効性。** 100% カバレッジでも assert が弱ければ何も守れない。「コードが実行されたか」ではなく「検証が機能したか」を測ることがテスト品質担保の要点。
 
-Builder は 2 段階でこれに対処する:
-
-**静的チェック（v0.1 から）** — `complete_chunk` のテスト品質検証で、パラメータ網羅・異常系の存在・Assertion 品質を確認する。詳細は [mcp-tools §4.3](3-details/mcp-tools.md)。
-
-**Mutation Testing（v0.2 以降で検討）** — 実装コードに意図的な変更（ミュータント）を加え、テストが検出できるかを測る。Survived（検出できなかった）ミュータントはテストの弱点を直接示す。ツールは TypeScript なら Stryker、Python なら mutmut を想定。Survived を検出した場合、Builder はそのミュータントを具体的な指示として Test Agent に渡し、テストを強化させる。
-
-**原則: カバレッジ ≠ テスト有効性。** 100% カバレッジでも assert が弱ければ何も守れない。Mutation Testing は「コードが実行されたか」ではなく「検証が機能したか」を測る唯一の自動化手段。
+検証項目と導入ロードマップの詳細は [MCP ツール §complete_chunk](3-details/mcp-tools.md) を参照。
 
 ## 4. 技術スタック
 
@@ -258,84 +210,11 @@ Builder は 2 段階でこれに対処する:
 - 自律運用時のパイプライン停滞モニター（タイムアウト警告、failed 放置検知、完了忘れ検知、Issue #8 より）
 - Test / Impl / Investigation Agent への役割特化エピソードの引き渡し（CDD-Ghost 連携、Issue #10 より）
 
-## 7. AI-Ghost-Shell で検証：分割シミュレーション
+## 7. 分割シミュレーション
 
-14本の設計文書を Builder に通した場合の想定チャンク分割:
+基本設計の方針が実例でどう現れるかを示すため、14 本の設計文書（CDD-Ghost 想定）を Builder に通したときの分割例を別紙にまとめている。17 チャンク・最大 5 レベル並列・Lv.3 で 6 並列という規模感が得られる。
 
-```mermaid
-graph TD
-    C01[chunk-01: DB スキーマ<br/>BasicDesign §3] --> C02[chunk-02: Policy パーサー<br/>ghost-policy-spec]
-    C01 --> C03[chunk-03: セッション管理<br/>BasicDesign §3.1 sessions]
-    C02 --> C04[chunk-04: メモリ検索<br/>progressive-disclosure<br/>+ memory-access-policy]
-    C03 --> C04
-    C04 --> C05[chunk-05: MCP memory_search / memory_detail<br/>mcp-tools §1,2]
-    C04 --> C06[chunk-06: MCP memory_store<br/>mcp-tools §5<br/>+ memory-access-policy]
-    C03 --> C07[chunk-07: MCP session_summarize<br/>mcp-tools §6]
-    C05 --> C08[chunk-08: MCP memory_search_global<br/>mcp-tools §4<br/>+ progressive-disclosure §Ring3]
-    C01 --> C09[chunk-09: エピソード抽出エンジン<br/>episode-extraction]
-    C09 --> C10[chunk-10: MCP episode_extract<br/>mcp-tools §7]
-    C09 --> C11[chunk-11: 逆伝播スコアリング<br/>episode-extraction §backprop]
-    C02 --> C12[chunk-12: CLI 基盤 + setup/status<br/>ghost-cli §1,14]
-    C12 --> C13[chunk-13: CLI backup/restore<br/>ghost-cli §3,4]
-    C12 --> C14[chunk-14: CLI logs/log/tag<br/>ghost-cli §6,7,8]
-    C12 --> C15[chunk-15: CLI sync/publish/diff<br/>ghost-cli §5,9,10]
-    C13 --> C16[chunk-16: CLI export/import/forget<br/>ghost-cli §11,12,13]
-    C08 --> C17[chunk-17: セキュリティ検証<br/>ghost-security]
-
-    style C01 fill:#4a9,color:#fff
-    style C02 fill:#4a9,color:#fff
-    style C03 fill:#4a9,color:#fff
-    style C04 fill:#59d,color:#fff
-    style C05 fill:#d84,color:#fff
-    style C06 fill:#d84,color:#fff
-    style C07 fill:#d84,color:#fff
-    style C08 fill:#d84,color:#fff
-    style C09 fill:#59d,color:#fff
-    style C10 fill:#d84,color:#fff
-    style C11 fill:#59d,color:#fff
-    style C12 fill:#e6a,color:#fff
-    style C13 fill:#e6a,color:#fff
-    style C14 fill:#e6a,color:#fff
-    style C15 fill:#e6a,color:#fff
-    style C16 fill:#e6a,color:#fff
-    style C17 fill:#c55,color:#fff
-```
-
-**凡例:** 緑: データ層 / 青: ロジック層 / 橙: MCP層 / 紫: CLI層 / 赤: セキュリティ
-
-### チャンク一覧
-
-| ID | チャンク名 | 参照設計書 | 推定入力 | 依存 |
-|----|-----------|-----------|---------|------|
-| 01 | DB スキーマ | BasicDesign §3 | ~2.5k | なし |
-| 02 | Policy パーサー | ghost-policy-spec | ~3.5k | 01 |
-| 03 | セッション管理 | BasicDesign §3.1 | ~2.0k | 01 |
-| 04 | メモリ検索コア | progressive-disclosure + memory-access-policy | ~4.0k | 02, 03 |
-| 05 | MCP memory_search / detail | mcp-tools §1,2 | ~3.0k | 04 |
-| 06 | MCP memory_store | mcp-tools §5 + memory-access-policy | ~2.5k | 04 |
-| 07 | MCP session_summarize | mcp-tools §6 | ~2.0k | 03 |
-| 08 | MCP memory_search_global | mcp-tools §4 + progressive-disclosure §Ring3 | ~2.5k | 05 |
-| 09 | エピソード抽出エンジン | episode-extraction | ~4.0k | 01 |
-| 10 | MCP episode_extract | mcp-tools §7 | ~2.0k | 09 |
-| 11 | 逆伝播スコアリング | episode-extraction §backprop | ~3.0k | 09 |
-| 12 | CLI 基盤 + setup/status | ghost-cli §1,14 | ~3.0k | 02 |
-| 13 | CLI backup/restore | ghost-cli §3,4 | ~3.0k | 12 |
-| 14 | CLI logs/log/tag | ghost-cli §6,7,8 | ~3.0k | 12 |
-| 15 | CLI sync/publish/diff | ghost-cli §5,9,10 | ~3.0k | 12 |
-| 16 | CLI export/import/forget | ghost-cli §11,12,13 | ~3.0k | 13 |
-| 17 | セキュリティ検証 | ghost-security | ~2.0k | 08 |
-
-**並列実行レベル:**
-```
-Lv.0: [01]
-Lv.1: [02, 03]
-Lv.2: [04, 09]
-Lv.3: [05, 06, 07, 10, 11, 12]
-Lv.4: [08, 13, 14, 15]
-Lv.5: [16, 17]
-```
-
-最大5レベル、Lv.3 で6並列。Builder が並列実行すれば大幅に短縮可能。
+詳細は [Ghost-Shell 分割シミュレーション](ghost-shell-split-example.md) を参照。
 
 ## 関連ドキュメント
 
@@ -345,3 +224,4 @@ Lv.5: [16, 17]
 - [MCP ツール詳細設計](3-details/mcp-tools.md)
 - [実行アダプタ詳細設計](3-details/execution-adapter.md)
 - [Builder リファレンス](4-ref/builder-reference.md)
+- [Ghost-Shell 分割シミュレーション](ghost-shell-split-example.md)

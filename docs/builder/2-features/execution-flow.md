@@ -164,7 +164,21 @@ Investigation の判断材料:
 - テストが設計要件を網羅しているか
 - 実装が設計意図を取り違えていないか
 
-### 4.3 Issue 駆動のチャンク管理（外部可視化レイヤー）
+### 4.3 統合テストチャンクの自動挿入
+
+Dual-Agent TDD は各チャンクの単体テストをカバーするが、チャンク間の接続は検証されない。`split_chunks` は依存グラフから統合テストチャンクを自動で挿入する。
+
+**挿入ルール:**
+
+| 条件 | 挿入位置 | テスト内容 |
+|------|---------|-----------|
+| 依存グラフで 3 チャンク以上が合流するノード | 合流ノードの直後 | 合流元チャンクの出力が正しく連携するか |
+| レイヤー境界（データ層 → ロジック層 → API 層）をまたぐ箇所 | 境界の直後 | 下位レイヤーの出力を上位レイヤーが正しく消費するか |
+| 全チャンク完了後 | 最終チャンクの後 | E2E テスト（主要ユースケースの一気通貫実行） |
+
+統合テストチャンクは `test_requirements` のみで構成され、`implementation_prompt` を持たない。Test Agent がテストを生成し、既存の実装に対して実行する（Red フェーズはスキップ）。
+
+### 4.4 Issue 駆動のチャンク管理（外部可視化レイヤー）
 
 実行エンジンのローカル状態（execution-state.json）に加え、Gitea/GitHub Issue をチャンクの進捗可視化・エージェント間通信に使う。
 
@@ -208,7 +222,28 @@ Issue の作成・更新には CDD-Ghost の `notebook_write` / `notebook_close`
 
 Issue リポジトリは recipe.json に指定。未指定の場合、Issue 連携はスキップ（ローカルのみで動作）。
 
-### 4.4 人の介入ポイント
+### 4.5 コード規約の検出と伝播
+
+**検出順序（優先度高→低）:**
+
+1. プロジェクトルートの `AGENTS.md` / `CODING-STANDARDS.md` — 組織・チームの統一規約（人間・AI 共通）
+2. `.editorconfig` / `eslint.config.js` / `.prettierrc` / `ruff.toml` 等 — 機械可読な linter・formatter 設定
+3. `package.json` / `pyproject.toml` の `scripts` セクション — `lint`, `format`, `test` コマンドの呼び出し方
+
+**伝播と検証の流れ:**
+
+- `analyze_design` が規約ファイルを収集し、`recipe.json` の `coding_standards` に記録
+- `next_chunks` が各チャンクの `implementation_prompt` に規約ダイジェストを挿入
+- `complete_chunk` の検証レベルに「規約適合性」を追加し、プロジェクトの linter / formatter を実行して結果を照合に含める
+- 実装が規約から逸脱した場合は Investigation Agent 経由で原因仕分け → Impl Agent に差し戻し
+
+**フォールバック:**
+
+- 規約ファイルが存在しない個人開発等では、規約検出ステップはスキップされる
+- その場合、Impl Agent は `tech_stack` の言語・フレームワーク慣例（TypeScript なら ESLint 推奨設定、Python なら PEP 8 等）に従う
+- 規約ファイルの解釈が困難な場合は警告を出すが処理は止めない
+
+### 4.6 人の介入ポイント
 
 人は完全に任せてもいいし、以下のタイミングで介入できる:
 
