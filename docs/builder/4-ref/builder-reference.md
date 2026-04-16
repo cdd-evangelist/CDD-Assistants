@@ -547,7 +547,7 @@ ExportRecipeResult
 ### 文書分析関連
 
 ```
-DocLayer = 'foundation' | 'specification' | 'usecase' | 'interface' | 'execution' | 'context'
+DocLayer = 'foundation' | 'specification' | 'usecase' | 'interface' | 'operation' | 'context'
 
 DocFrontmatter
   ├── status?: string

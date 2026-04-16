@@ -141,7 +141,7 @@ describe('analyzeDesign', () => {
     expect(layerOf('ai-usecases.md')).toBe('usecase')
     expect(layerOf('ghost-cli.md')).toBe('interface')
     expect(layerOf('ghost-security.md')).toBe('specification')
-    expect(layerOf('operation-flows.md')).toBe('execution')
+    expect(layerOf('operation-flows.md')).toBe('operation')
   })
 
   it('tech_stack を設計文書から抽出する', async () => {

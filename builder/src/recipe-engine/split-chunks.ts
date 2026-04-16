@@ -19,7 +19,7 @@ const LAYER_TO_IMPL: Record<DocLayer, ImplLayer> = {
   specification: 'logic',
   usecase: 'skip',       // 実装対象外（検証基準として参照）
   interface: 'interface',
-  execution: 'test',
+  operation: 'test',
   context: 'skip',       // 実装対象外
 }
 

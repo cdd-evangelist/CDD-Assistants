@@ -110,7 +110,7 @@ const LAYER_HEURISTICS: Array<{ layer: DocLayer; patterns: RegExp[] }> = [
     patterns: [/\bMCP\b.*ツール/, /\bCLI\b/, /\bAPI\b.*エンドポイント/, /コマンド一覧/],
   },
   {
-    layer: 'execution',
+    layer: 'operation',
     patterns: [/操作フロー/, /ベンチマーク/, /デプロイ/, /運用/],
   },
   {
@@ -140,9 +140,9 @@ function inferLayer(docName: string, content: string): DocLayer {
     { pattern: /todo/i, layer: 'context' },
     { pattern: /comparison/i, layer: 'context' },
     { pattern: /prior.*art/i, layer: 'context' },
-    { pattern: /operation/i, layer: 'execution' },
-    { pattern: /benchmark/i, layer: 'execution' },
-    { pattern: /flow/i, layer: 'execution' },
+    { pattern: /operation/i, layer: 'operation' },
+    { pattern: /benchmark/i, layer: 'operation' },
+    { pattern: /flow/i, layer: 'operation' },
   ]
 
   for (const hint of nameHints) {
@@ -372,7 +372,7 @@ export async function analyzeDesign(input: {
     specification: [],
     usecase: [],
     interface: [],
-    execution: [],
+    operation: [],
     context: [],
   }
 

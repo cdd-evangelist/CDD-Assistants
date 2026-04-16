@@ -92,7 +92,7 @@ export type DocLayer =
   | 'specification'  // 詳細仕様、プロトコル
   | 'usecase'        // ユースケース（UC-*, AC-*）
   | 'interface'      // API、CLI、MCPツール
-  | 'execution'      // 運用、デプロイ、ベンチマーク
+  | 'operation'      // 運用、ベンチマーク、操作フロー
   | 'context'        // 比較、TODO、参考資料
 
 /** decisions.jsonl の各行 */

@@ -464,7 +464,7 @@ YAML フロントマター（`---` で囲まれた部分）を簡易パースす
 
 | 型名 | 種別 | 説明 |
 |---|---|---|
-| `DocLayer` | union | `'foundation' \| 'specification' \| 'usecase' \| 'interface' \| 'execution' \| 'context'` -- 文書レイヤー 6 種 |
+| `DocLayer` | union | `'foundation' \| 'specification' \| 'usecase' \| 'interface' \| 'operation' \| 'context'` -- 文書レイヤー 6 種 |
 | `DocStatus` | union | `'draft' \| 'in_progress' \| 'complete'` -- 文書ステータス 3 種 |
 | `DocFrontmatter` | interface | フロントマターの構造。全フィールド optional: `status`, `layer`, `last_reviewed`, `decisions`, `open_questions`, `tags` |
 | `Decision` | interface | 決定事項。`id`, `decision`, `rationale`, `affects`, `supersedes`, `created_at` |

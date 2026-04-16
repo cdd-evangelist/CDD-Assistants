@@ -2,7 +2,7 @@ import type { DocFrontmatter, DocLayer, DocStatus } from '../types.js'
 
 const VALID_STATUSES: Set<string> = new Set(['draft', 'in_progress', 'complete'])
 const VALID_LAYERS: Set<string> = new Set([
-  'foundation', 'specification', 'usecase', 'interface', 'execution', 'context',
+  'foundation', 'specification', 'usecase', 'interface', 'operation', 'context',
 ])
 
 /**
