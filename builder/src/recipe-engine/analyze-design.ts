@@ -1,5 +1,5 @@
-import { readFile, readdir, stat } from 'node:fs/promises'
-import { resolve, basename, join } from 'node:path'
+import { readFile, readdir, stat, access } from 'node:fs/promises'
+import { resolve, basename, join, relative, dirname } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type {
@@ -10,6 +10,7 @@ import type {
   Decision,
   DriftWarning,
   TechStack,
+  CodingStandards,
 } from '../types.js'
 
 const execFileAsync = promisify(execFile)
@@ -295,6 +296,112 @@ export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
 
 // --- メイン ---
 
+// --- パスユーティリティ ---
+
+/**
+ * 複数の絶対パスから最長共通親ディレクトリを計算する。
+ * source_docs[].path をサブディレクトリ込みの相対パスにするための基準。
+ */
+function computeCommonParent(absPaths: string[]): string {
+  if (absPaths.length === 0) return ''
+  if (absPaths.length === 1) return dirname(absPaths[0])
+
+  const splitPaths = absPaths.map(p => dirname(p).split(/[/\\]/))
+  const minLen = Math.min(...splitPaths.map(s => s.length))
+  const common: string[] = []
+  for (let i = 0; i < minLen; i++) {
+    const seg = splitPaths[0][i]
+    if (splitPaths.every(s => s[i] === seg)) {
+      common.push(seg)
+    } else {
+      break
+    }
+  }
+  return common.join('/') || '/'
+}
+
+// --- コード規約検出（coding-standards.md §3） ---
+
+const CODING_STANDARD_DOCS = ['AGENTS.md', 'CODING-STANDARDS.md']
+
+const LINTER_FILES = [
+  '.editorconfig',
+  'eslint.config.js',
+  'eslint.config.mjs',
+  'eslint.config.ts',
+  '.eslintrc',
+  '.eslintrc.js',
+  '.eslintrc.json',
+  '.prettierrc',
+  '.prettierrc.js',
+  '.prettierrc.json',
+  'prettier.config.js',
+  'ruff.toml',
+  'pyproject.toml',
+]
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * プロジェクトディレクトリからコード規約情報を検出する。
+ * coding-standards.md §3 の優先順序に従う。
+ * docs / linters / scripts のいずれも空の場合は null を返す。
+ */
+async function detectCodingStandards(projectDir: string): Promise<CodingStandards | null> {
+  const docs: string[] = []
+  const linters: string[] = []
+  const scripts: CodingStandards['scripts'] = {}
+
+  // 1. 規約文書（AGENTS.md / CODING-STANDARDS.md）
+  for (const docFile of CODING_STANDARD_DOCS) {
+    if (await fileExists(join(projectDir, docFile))) {
+      docs.push(docFile)
+    }
+  }
+
+  // 2. linter / formatter 設定ファイル
+  for (const linterFile of LINTER_FILES) {
+    if (await fileExists(join(projectDir, linterFile))) {
+      linters.push(linterFile)
+    }
+  }
+
+  // 3. scripts（package.json → pyproject.toml の順）
+  const packageJsonPath = join(projectDir, 'package.json')
+  if (await fileExists(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(await readFile(packageJsonPath, 'utf-8'))
+      const s = pkg.scripts ?? {}
+      if (s.lint)   scripts.lint   = s.lint
+      if (s.format) scripts.format = s.format
+      if (s.test)   scripts.test   = s.test
+    } catch {
+      // JSON パース失敗は無視
+    }
+  }
+
+  if (!scripts.lint && !scripts.format && !scripts.test) {
+    // pyproject.toml の [tool.scripts] も探す（簡易対応）
+    const pyprojectPath = join(projectDir, 'pyproject.toml')
+    if (await fileExists(pyprojectPath) && !linters.includes('pyproject.toml')) {
+      // pyproject.toml は linter 設定としても扱うが、scripts は未対応（TOML パーサー不要）
+    }
+  }
+
+  if (docs.length === 0 && linters.length === 0 && Object.keys(scripts).length === 0) {
+    return null
+  }
+
+  return { docs, linters, scripts }
+}
+
 export async function analyzeDesign(input: {
   doc_paths: string[]
   project_name: string
@@ -318,15 +425,21 @@ export async function analyzeDesign(input: {
     estimatedTokens: number
   }> = []
 
-  for (const docPath of doc_paths) {
-    const absPath = resolve(docPath)
+  // 全 doc の絶対パスを先に決めて、最長共通親ディレクトリを計算する
+  const absPaths = doc_paths.map(p => resolve(p))
+  const commonBase = computeCommonParent(absPaths)
+
+  for (const absPath of absPaths) {
     const content = await readFile(absPath, 'utf-8')
     const name = basename(absPath, '.md')
     const { frontmatter, body } = parseFrontmatter(content)
     const lines = content.split('\n').length
 
+    // commonBase からの相対パスを path とする（サブディレクトリも保持）
+    const relPath = relative(commonBase, absPath) || basename(absPath)
+
     docs.push({
-      path: basename(absPath),
+      path: relPath,
       name,
       content,
       body,
@@ -342,13 +455,15 @@ export async function analyzeDesign(input: {
   const decisions = project_dir ? await loadDecisions(project_dir) : []
 
   // 4. 依存グラフを構築
-  const docNameSet = new Set(docs.map(d => d.name))
+  const nameToPath = new Map(docs.map(d => [d.name, d.path]))
   const dependencyGraph: Record<string, string[]> = {}
 
   for (const doc of docs) {
-    // wiki-link から同一文書群内のリンクを抽出
-    const refs = doc.wikiLinks.filter(link => docNameSet.has(link) && link !== doc.name)
-    dependencyGraph[doc.path] = refs.map(r => `${r}.md`)
+    // wiki-link から同一文書群内のリンクを抽出（path は相対パスで揃える）
+    const refs = doc.wikiLinks
+      .filter(link => nameToPath.has(link) && link !== doc.name)
+      .map(link => nameToPath.get(link)!)
+    dependencyGraph[doc.path] = refs
   }
 
   // decisions.jsonl から追加の依存関係を反映
@@ -376,9 +491,15 @@ export async function analyzeDesign(input: {
     context: [],
   }
 
+  const KNOWN_LAYERS = new Set<DocLayer>([
+    'foundation', 'specification', 'usecase', 'interface', 'operation', 'context',
+  ])
   for (const doc of docs) {
-    // Hybrid Approach C: フロントマターがあれば優先
-    const layer = doc.frontmatter?.layer ?? inferLayer(doc.name, doc.body)
+    // Hybrid Approach C: フロントマターがあれば優先。ただし未知の layer 値はフォールバック
+    const fmLayer = doc.frontmatter?.layer as DocLayer | undefined
+    const layer: DocLayer = fmLayer && KNOWN_LAYERS.has(fmLayer)
+      ? fmLayer
+      : inferLayer(doc.name, doc.body)
     layers[layer].push(doc.path)
   }
 
@@ -401,7 +522,10 @@ export async function analyzeDesign(input: {
 
   // 8. DocumentAnalysis を組み立て
   const documents: DocumentAnalysis[] = docs.map(doc => {
-    const layer = doc.frontmatter?.layer ?? inferLayer(doc.name, doc.body)
+    const fmLayer = doc.frontmatter?.layer as DocLayer | undefined
+    const layer: DocLayer = fmLayer && KNOWN_LAYERS.has(fmLayer)
+      ? fmLayer
+      : inferLayer(doc.name, doc.body)
     return {
       path: doc.path,
       lines: doc.lines,
@@ -423,6 +547,7 @@ export async function analyzeDesign(input: {
     dependency_graph: dependencyGraph,
     layers,
     tech_stack: techStack,
+    coding_standards: project_dir ? await detectCodingStandards(project_dir) : null,
     total_tokens: totalTokens,
   }
 }

@@ -200,6 +200,74 @@ describe('analyzeDesign', () => {
     const enDoc = result.documents.find(d => d.path === 'en.md')!
     expect(jpDoc.estimated_tokens).toBeGreaterThan(enDoc.estimated_tokens)
   })
+
+  // --- coding_standards 検出 ---
+
+  it('project_dir 未指定のとき coding_standards は null', async () => {
+    await writeFile(join(tmpDir, 'design.md'), '# 設計')
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'design.md')],
+      project_name: 'Test',
+      // project_dir を渡さない
+    })
+    expect(result.coding_standards).toBeNull()
+  })
+
+  it('AGENTS.md を docs に検出する', async () => {
+    await writeFile(join(tmpDir, 'design.md'), '# 設計')
+    await writeFile(join(tmpDir, 'AGENTS.md'), '# コーディング規約\n- TypeScript 使用')
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'design.md')],
+      project_name: 'Test',
+      project_dir: tmpDir,
+    })
+    expect(result.coding_standards).not.toBeNull()
+    expect(result.coding_standards!.docs).toContain('AGENTS.md')
+  })
+
+  it('linter 設定ファイルを linters に検出する', async () => {
+    await writeFile(join(tmpDir, 'design.md'), '# 設計')
+    await writeFile(join(tmpDir, '.editorconfig'), '[*.ts]\nindent_size = 2')
+    await writeFile(join(tmpDir, 'eslint.config.js'), 'export default {}')
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'design.md')],
+      project_name: 'Test',
+      project_dir: tmpDir,
+    })
+    expect(result.coding_standards).not.toBeNull()
+    expect(result.coding_standards!.linters).toContain('.editorconfig')
+    expect(result.coding_standards!.linters).toContain('eslint.config.js')
+  })
+
+  it('package.json の scripts.lint / format / test を検出する', async () => {
+    await writeFile(join(tmpDir, 'design.md'), '# 設計')
+    await writeFile(join(tmpDir, 'package.json'), JSON.stringify({
+      scripts: {
+        lint: 'eslint src',
+        format: 'prettier --write src',
+        test: 'vitest run',
+      },
+    }))
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'design.md')],
+      project_name: 'Test',
+      project_dir: tmpDir,
+    })
+    expect(result.coding_standards).not.toBeNull()
+    expect(result.coding_standards!.scripts.lint).toBe('eslint src')
+    expect(result.coding_standards!.scripts.format).toBe('prettier --write src')
+    expect(result.coding_standards!.scripts.test).toBe('vitest run')
+  })
+
+  it('規約ファイルが何もなければ coding_standards は null', async () => {
+    await writeFile(join(tmpDir, 'design.md'), '# 設計')
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'design.md')],
+      project_name: 'Test',
+      project_dir: tmpDir,
+    })
+    expect(result.coding_standards).toBeNull()
+  })
 })
 
 // --- detectDrift ---

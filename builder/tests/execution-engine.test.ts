@@ -9,7 +9,7 @@ import { executionStatus } from '../src/execution-engine/execution-status.js'
 import type { Recipe } from '../src/types.js'
 
 // テスト用のミニレシピ
-function createTestRecipe(): Recipe {
+function createTestRecipe(overrides?: Partial<Recipe>): Recipe {
   return {
     project: 'test-project',
     created_at: '2026-03-03T00:00:00Z',
@@ -19,6 +19,7 @@ function createTestRecipe(): Recipe {
       runtime: 'Node.js',
       test: 'vitest',
     },
+    coding_standards: null,
     chunks: [
       {
         id: 'chunk-01',
@@ -64,6 +65,7 @@ function createTestRecipe(): Recipe {
       },
     ],
     execution_order: [['chunk-01'], ['chunk-02', 'chunk-03']],
+    ...overrides,
   }
 }
 
@@ -168,6 +170,42 @@ describe('complete_chunk', () => {
     expect(result.status).toBe('failed')
     expect(result.verification.files_exist).toBe(false)
     expect(result.verification.missing_files).toContain('src/schema.sql')
+  })
+})
+
+describe('coding_standards_digest の注入', () => {
+  it('coding_standards が null のとき言語慣例フォールバックをプロンプトに付加する', async () => {
+    await loadRecipe(recipePath)
+    const result = await nextChunks(statePath)
+    const chunk = result.ready[0]
+    expect(chunk.implementation_prompt).toContain('コード規約')
+    expect(chunk.implementation_prompt).toContain('TypeScript')
+    expect(chunk.coding_standards_digest).toBeTruthy()
+  })
+
+  it('coding_standards が設定されているとき規約ファイル名とスクリプトをプロンプトに付加する', async () => {
+    const recipeWithStandards = createTestRecipe({
+      coding_standards: {
+        docs: ['AGENTS.md'],
+        linters: ['.editorconfig', 'eslint.config.js'],
+        scripts: { lint: 'npm run lint', format: 'npm run format' },
+      },
+    })
+    await writeFile(recipePath, JSON.stringify(recipeWithStandards, null, 2))
+    await loadRecipe(recipePath)
+
+    const result = await nextChunks(statePath)
+    const chunk = result.ready[0]
+    expect(chunk.implementation_prompt).toContain('AGENTS.md')
+    expect(chunk.implementation_prompt).toContain('npm run lint')
+    expect(chunk.coding_standards_digest).toContain('AGENTS.md')
+  })
+
+  it('coding_standards_digest が PreparedChunk フィールドに格納される', async () => {
+    await loadRecipe(recipePath)
+    const result = await nextChunks(statePath)
+    expect(result.ready[0].coding_standards_digest).toBeDefined()
+    expect(typeof result.ready[0].coding_standards_digest).toBe('string')
   })
 })
 

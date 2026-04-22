@@ -1,6 +1,55 @@
 import { readFile } from 'node:fs/promises'
 import { resolve, dirname, join } from 'node:path'
-import type { Recipe, ExecutionState, PreparedChunk, NextChunksResult } from '../types.js'
+import type { Recipe, ExecutionState, PreparedChunk, NextChunksResult, CodingStandards, TechStack } from '../types.js'
+
+// --- コード規約ダイジェスト生成（coding-standards.md §4） ---
+
+const LANGUAGE_FALLBACK: Record<string, string> = {
+  TypeScript: 'TypeScript 標準のコーディング規約に従うこと（strict モード推奨、any 禁止）',
+  JavaScript: 'JavaScript 標準のコーディング規約に従うこと',
+  Python: 'PEP 8 に従うこと（型ヒント推奨）',
+  Go: 'gofmt / golint の規約に従うこと',
+  Rust: 'rustfmt の規約に従うこと',
+}
+
+/**
+ * CodingStandards から Agent に読ませる短縮ダイジェストを生成する。
+ * coding-standards.md §4 のフォーマットに従う。
+ */
+export function generateCodingStandardsDigest(
+  codingStandards: CodingStandards | null,
+  techStack: TechStack,
+): string {
+  const lines: string[] = ['--- コード規約（プロジェクト遵守） ---']
+
+  if (!codingStandards) {
+    // 言語慣例フォールバック
+    const fallback = LANGUAGE_FALLBACK[techStack.language]
+      ?? `${techStack.language} の標準的なコーディング規約に従うこと`
+    lines.push(`- ${fallback}`)
+    return lines.join('\n')
+  }
+
+  // 規約文書
+  for (const doc of codingStandards.docs) {
+    lines.push(`- ${doc} のルールに従うこと`)
+  }
+
+  // linter / formatter 設定
+  if (codingStandards.linters.length > 0) {
+    lines.push(`- 既存 linter 設定（${codingStandards.linters.join(', ')}）を遵守すること`)
+  }
+
+  // lint / format コマンド
+  const commands: string[] = []
+  if (codingStandards.scripts.lint)   commands.push(codingStandards.scripts.lint)
+  if (codingStandards.scripts.format) commands.push(codingStandards.scripts.format)
+  if (commands.length > 0) {
+    lines.push(`- 実装完了後、以下のコマンドが通ること: ${commands.join(' && ')}`)
+  }
+
+  return lines.join('\n')
+}
 
 /**
  * {{file:path}} プレースホルダを実際のファイル内容に置換する。
@@ -68,6 +117,9 @@ export async function nextChunks(executionStatePath: string): Promise<NextChunks
     }
   }
 
+  // coding_standards_digest を事前に生成（全チャンク共通）
+  const digest = generateCodingStandardsDigest(recipe.coding_standards, recipe.tech_stack)
+
   // ready チャンクのプレースホルダを解決して PreparedChunk を作成
   const ready: PreparedChunk[] = []
   for (const id of readyIds) {
@@ -83,14 +135,22 @@ export async function nextChunks(executionStatePath: string): Promise<NextChunks
       state.working_dir
     )
 
+    // 統合テストチャンクにはダイジェストを注入しない（実装プロンプトを持たないため）
+    const basePrompt = resolvedPrompt.replace('{source_content}', resolvedContent)
+    const finalPrompt = chunk.is_integration_test
+      ? basePrompt
+      : `${basePrompt}\n\n${digest}`
+
     ready.push({
       id: chunk.id,
       name: chunk.name,
-      implementation_prompt: resolvedPrompt.replace('{source_content}', resolvedContent),
+      implementation_prompt: finalPrompt,
       expected_outputs: chunk.expected_outputs,
       completion_criteria: chunk.completion_criteria,
+      test_requirements: chunk.test_requirements,
       reference_doc: chunk.reference_doc,
       working_dir: state.working_dir,
+      coding_standards_digest: chunk.is_integration_test ? undefined : digest,
     })
   }
 

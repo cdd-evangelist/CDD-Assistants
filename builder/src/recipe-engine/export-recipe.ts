@@ -142,6 +142,7 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
   const {
     project,
     tech_stack,
+    coding_standards = null,
     chunks: rawChunks,
     docs_dir: docsDir,
     output_path: outputPath,
@@ -179,10 +180,12 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
       implementation_prompt: implementationPrompt,
       expected_outputs: draft.expected_outputs,
       completion_criteria: draft.completion_criteria,
+      test_requirements: draft.test_requirements,
       reference_doc: draft.reference_doc,
       validation_context: draft.validation_context,
       estimated_input_tokens: draft.estimated_input_tokens,
       estimated_output_tokens: draft.estimated_output_tokens,
+      is_integration_test: draft.is_integration_test,
     })
   }
 
@@ -194,6 +197,7 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
     created_at: new Date().toISOString(),
     builder_version: BUILDER_VERSION,
     tech_stack,
+    coding_standards,
     chunks: resolvedChunks,
     execution_order: executionOrder,
   }

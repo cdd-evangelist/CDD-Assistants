@@ -8,6 +8,7 @@ import type {
   DocumentAnalysis,
   DocLayer,
   SourceDoc,
+  TestRequirements,
 } from '../types.js'
 
 // --- 実装レイヤーマッピング ---
@@ -77,6 +78,219 @@ function estimateTokens(text: string): number {
     }
   }
   return Math.ceil(tokens)
+}
+
+// --- status フィルタ（Step 0） ---
+
+/**
+ * frontmatter.status による入力選別。
+ * - draft:    除外 + 警告（review_notes に記録）
+ * - archived: 除外（警告なし）
+ * - その他:    含める
+ */
+function filterByStatus(
+  docs: DocumentAnalysis[],
+  reviewNotes: string[],
+): DocumentAnalysis[] {
+  const kept: DocumentAnalysis[] = []
+  for (const doc of docs) {
+    const status = doc.frontmatter?.status
+    if (status === 'draft') {
+      reviewNotes.push(
+        `${doc.path}: status: draft のため実装対象から除外。レビューして status を更新してください`,
+      )
+      continue
+    }
+    if (status === 'archived') {
+      continue // 意図的廃止。警告なし
+    }
+    kept.push(doc)
+  }
+  return kept
+}
+
+// --- test_requirements 抽出 ---
+
+const INTERFACE_KEYWORDS = [
+  'API', 'api', 'インターフェース', 'interface',
+  '入力', '出力', 'メソッド', '関数',
+  'ツール', 'コマンド', 'エンドポイント',
+  'スキーマ', 'テーブル定義', '型定義',
+]
+
+const BOUNDARY_KEYWORDS = [
+  'エラー', '異常', '境界', '例外',
+  '制約', '失敗', 'バリデーション', 'validation',
+  'エッジ', 'タイムアウト', 'リトライ',
+]
+
+function classifySections(sections: string[]): {
+  interface_tests: string[]
+  boundary_tests: string[]
+} {
+  const interfaceTests: string[] = []
+  const boundaryTests: string[] = []
+
+  for (const section of sections) {
+    const hasBoundaryKw = BOUNDARY_KEYWORDS.some(kw => section.includes(kw))
+    if (hasBoundaryKw) {
+      boundaryTests.push(`「${section}」の観点で異常系・境界値を検証`)
+      continue // boundary 優先、interface にも分類しない
+    }
+    const hasInterfaceKw = INTERFACE_KEYWORDS.some(kw => section.includes(kw))
+    if (hasInterfaceKw) {
+      interfaceTests.push(`「${section}」に記載された仕様を検証`)
+    }
+  }
+
+  return { interface_tests: interfaceTests, boundary_tests: boundaryTests }
+}
+
+function initialTestRequirements(sections: string[]): TestRequirements {
+  const { interface_tests, boundary_tests } = classifySections(sections)
+  return {
+    interface_tests,
+    boundary_tests,
+    integration_refs: [], // depends_on 解決後に埋める
+  }
+}
+
+function fillIntegrationRefs(chunks: DraftChunk[]): void {
+  for (const chunk of chunks) {
+    if (chunk.is_integration_test) continue // 統合テストチャンク自身はスキップ
+    const refs: string[] = []
+    for (const depId of chunk.depends_on) {
+      const dep = chunks.find(c => c.id === depId)
+      if (!dep) continue
+      refs.push(`${dep.name} の出力が正しく消費されること`)
+    }
+    chunk.test_requirements.integration_refs = refs
+  }
+}
+
+// --- 統合テストチャンク挿入（Step 4） ---
+
+function createIntegrationChunk(
+  id: string,
+  name: string,
+  description: string,
+  dependsOn: string[],
+  integrationRefs: string[],
+): DraftChunk {
+  return {
+    id,
+    name,
+    description,
+    depends_on: dependsOn,
+    source_docs: [],
+    implementation_prompt_template:
+      `(統合テストチャンク: Test Agent が depends_on の既存実装に対してテストを生成・実行してください。Red フェーズはスキップ)`,
+    expected_outputs: [],
+    completion_criteria: ['test_requirements の全項目が既存実装に対して PASS する'],
+    test_requirements: {
+      interface_tests: [],
+      boundary_tests: [],
+      integration_refs: integrationRefs,
+    },
+    reference_doc: `docs/ref/${id}-${name.replace(/[^a-zA-Z0-9　-鿿]/g, '-')}.md`,
+    estimated_input_tokens: 1000,
+    estimated_output_tokens: 1500,
+    is_integration_test: true,
+  }
+}
+
+/**
+ * chunk-splitting.md §5 に従って統合テストチャンクを挿入する:
+ *   1. 依存合流点（3チャンク以上が1チャンクに合流）
+ *   2. レイヤー境界（data → logic / logic → interface 等）
+ *   3. 最終位置（E2E）
+ *
+ * 重複挿入を避けるため、同じ depends_on セットに対しては1つだけ挿入する。
+ */
+function insertIntegrationChunks(
+  chunks: DraftChunk[],
+  candidateMap: Map<string, { implLayer: ImplLayer; docPath: string }>,
+): DraftChunk[] {
+  const integrationChunks: DraftChunk[] = []
+  const seenDepSets = new Set<string>()
+  let nextIdx = chunks.length + 1
+  const nextId = () => `chunk-${String(nextIdx++).padStart(2, '0')}-integration`
+
+  const keyOf = (deps: string[]) => [...deps].sort().join(',')
+
+  // 1. 依存合流点: depends_on に 3 つ以上あるチャンクを検出
+  for (const chunk of chunks) {
+    if (chunk.depends_on.length >= 3) {
+      const key = keyOf([chunk.id])
+      if (seenDepSets.has(key)) continue
+      seenDepSets.add(key)
+      integrationChunks.push(
+        createIntegrationChunk(
+          nextId(),
+          `${chunk.name}-合流統合テスト`,
+          `${chunk.name} における ${chunk.depends_on.length} チャンクの合流の接続検証`,
+          [chunk.id],
+          chunk.depends_on.map(depId => {
+            const dep = chunks.find(c => c.id === depId)
+            return dep ? `${dep.name} の出力が ${chunk.name} で正しく連携する` : ''
+          }).filter(s => s !== ''),
+        ),
+      )
+    }
+  }
+
+  // 2. レイヤー境界: 各レイヤー最後のチャンク群を depends_on とする統合テスト
+  const layerChunks = new Map<ImplLayer, string[]>()
+  for (const chunk of chunks) {
+    const info = candidateMap.get(chunk.id)
+    if (!info) continue
+    const list = layerChunks.get(info.implLayer) ?? []
+    list.push(chunk.id)
+    layerChunks.set(info.implLayer, list)
+  }
+
+  for (let i = 0; i < IMPL_LAYER_ORDER.length - 1; i++) {
+    const lowerLayer = IMPL_LAYER_ORDER[i]
+    const upperLayer = IMPL_LAYER_ORDER[i + 1]
+    const lowerChunks = layerChunks.get(lowerLayer) ?? []
+    const upperChunks = layerChunks.get(upperLayer) ?? []
+    if (lowerChunks.length === 0 || upperChunks.length === 0) continue
+
+    const depSet = [...lowerChunks, ...upperChunks].sort()
+    const key = keyOf(depSet)
+    if (seenDepSets.has(key)) continue
+    seenDepSets.add(key)
+
+    integrationChunks.push(
+      createIntegrationChunk(
+        nextId(),
+        `${lowerLayer}-${upperLayer}-境界統合テスト`,
+        `${lowerLayer} レイヤーの出力を ${upperLayer} レイヤーが正しく消費する接続検証`,
+        depSet,
+        [`${lowerLayer} レイヤーの出力が ${upperLayer} レイヤーで正しく消費されること`],
+      ),
+    )
+  }
+
+  // 3. 最終位置（E2E）: 全ての非統合チャンクに依存
+  const allChunkIds = chunks.map(c => c.id).sort()
+  if (allChunkIds.length > 0) {
+    const key = keyOf(allChunkIds)
+    if (!seenDepSets.has(key)) {
+      seenDepSets.add(key)
+      integrationChunks.push(
+        createIntegrationChunk(
+          nextId(),
+          'E2E統合テスト',
+          '主要ユースケースの一気通貫実行検証',
+          allChunkIds,
+          ['主要ユースケースが end-to-end で動作すること'],
+        ),
+      )
+    }
+  }
+
+  return [...chunks, ...integrationChunks]
 }
 
 // --- チャンク生成 ---
@@ -274,9 +488,12 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   const constraints = { ...DEFAULT_CONSTRAINTS, ...userConstraints }
   const reviewNotes: string[] = []
 
+  // 0. status による入力選別（draft/archived を除外）
+  const activeDocs = filterByStatus(analysis.documents, reviewNotes)
+
   // 1. 実装対象の文書をレイヤーでグループ化
   const implGroups = new Map<ImplLayer, DocumentAnalysis[]>()
-  for (const doc of analysis.documents) {
+  for (const doc of activeDocs) {
     const implLayer = LAYER_TO_IMPL[doc.layer]
     if (implLayer === 'skip') continue
 
@@ -290,7 +507,7 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   for (const [implLayer, docs] of implGroups) {
     const candidates = generateCandidates(
       docs,
-      analysis.documents,
+      activeDocs, // status で選別済みの文書のみを validation_context のソースに使う
       implLayer,
       constraints.max_input_tokens,
     )
@@ -333,6 +550,10 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
       ? `関連ユースケース: ${candidate.validationDocs.join(', ')}`
       : undefined
 
+    // test_requirements 初期生成（integration_refs は depends_on 解決後に埋める）
+    const sourceDoc = activeDocs.find(d => d.path === candidate.docPath)
+    const testRequirements = initialTestRequirements(sourceDoc?.sections ?? [])
+
     return {
       id,
       name: candidate.name,
@@ -343,6 +564,8 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
         `以下の設計に基づき、${candidate.name} を実装してください。\n\n{source_content}`,
       expected_outputs: [], // 機械的に決定困難 → 要レビュー
       completion_criteria: ['テストが通る'],
+      test_requirements: testRequirements,
+      is_integration_test: false,
       reference_doc: `docs/ref/${id}-${candidate.name.replace(/[^a-zA-Z0-9\u3000-\u9fff]/g, '-')}.md`,
       validation_context: validationContext,
       estimated_input_tokens: candidate.estimatedInputTokens,
@@ -353,8 +576,14 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   // 4. 依存関係を設定
   assignDependencies(draftChunks, analysis, candidateMap)
 
-  // 5. execution_order を算出
-  const executionOrder = computeExecutionOrder(draftChunks)
+  // 4.5 integration_refs を depends_on に基づいて充填
+  fillIntegrationRefs(draftChunks)
+
+  // 4.6 統合テストチャンクを自動挿入（合流点・レイヤー境界・最終位置）
+  const allChunks = insertIntegrationChunks(draftChunks, candidateMap)
+
+  // 5. execution_order を算出（統合テストチャンク込み）
+  const executionOrder = computeExecutionOrder(allChunks)
 
   // 6. レビューフラグ
   // expected_outputs が空 → 必ずレビュー必要
@@ -366,7 +595,7 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   )
 
   return {
-    chunks: draftChunks,
+    chunks: allChunks,
     execution_order: executionOrder,
     needs_review: needsReview,
     review_notes: reviewNotes,

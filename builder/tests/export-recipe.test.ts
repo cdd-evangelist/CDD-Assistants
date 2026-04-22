@@ -4,7 +4,26 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { exportRecipe } from '../src/recipe-engine/export-recipe.js'
 import { extractSections } from '../src/recipe-engine/export-recipe.js'
-import type { ExportRecipeInput, Recipe } from '../src/types.js'
+import type { ExportRecipeInput, Recipe, DraftChunk } from '../src/types.js'
+
+function makeMinimalChunk(overrides?: Partial<DraftChunk>): DraftChunk {
+  return {
+    id: 'chunk-01',
+    name: 'テスト',
+    description: 'テスト',
+    depends_on: [],
+    source_docs: [],
+    implementation_prompt_template: '{source_content}',
+    expected_outputs: [],
+    completion_criteria: [],
+    test_requirements: { interface_tests: [], boundary_tests: [], integration_refs: [] },
+    reference_doc: 'docs/ref/chunk-01-ref.md',
+    estimated_input_tokens: 500,
+    estimated_output_tokens: 500,
+    is_integration_test: false,
+    ...overrides,
+  }
+}
 
 let tmpDir: string
 let docsDir: string
@@ -390,5 +409,52 @@ describe('exportRecipe', () => {
 
     expect(recipe.chunks[0].source_content).toContain('（参照: big.md')
     expect(recipe.chunks[0].source_content).not.toContain('x'.repeat(100))
+  })
+
+  // --- coding_standards の受け渡し ---
+
+  it('coding_standards が渡されると recipe.json に含まれる', async () => {
+    await writeFile(join(docsDir, 'design.md'), '# 設計')
+
+    const input: ExportRecipeInput = {
+      project: 'Test',
+      tech_stack: { language: 'TypeScript' },
+      coding_standards: {
+        docs: ['AGENTS.md'],
+        linters: ['.editorconfig'],
+        scripts: { lint: 'npm run lint', format: 'npm run format' },
+      },
+      docs_dir: docsDir,
+      output_path: join(tmpDir, 'recipe.json'),
+      chunks: [makeMinimalChunk({
+        source_docs: [{ path: 'design.md', sections: ['全体'], include: 'full' }],
+      })],
+    }
+
+    const result = await exportRecipe(input)
+    const recipe: Recipe = JSON.parse(await readFile(result.recipe_path, 'utf-8'))
+
+    expect(recipe.coding_standards).not.toBeNull()
+    expect(recipe.coding_standards!.docs).toContain('AGENTS.md')
+    expect(recipe.coding_standards!.scripts.lint).toBe('npm run lint')
+  })
+
+  it('coding_standards を省略すると recipe.json では null になる', async () => {
+    await writeFile(join(docsDir, 'design.md'), '# 設計')
+
+    const input: ExportRecipeInput = {
+      project: 'Test',
+      tech_stack: { language: 'TypeScript' },
+      docs_dir: docsDir,
+      output_path: join(tmpDir, 'recipe.json'),
+      chunks: [makeMinimalChunk({
+        source_docs: [{ path: 'design.md', sections: ['全体'], include: 'full' }],
+      })],
+    }
+
+    const result = await exportRecipe(input)
+    const recipe: Recipe = JSON.parse(await readFile(result.recipe_path, 'utf-8'))
+
+    expect(recipe.coding_standards).toBeNull()
   })
 })
