@@ -355,7 +355,7 @@ Chunk（recipe.json の最終形）
 1. recipe.json を読み込み、構造を検証
 2. 各チャンクの状態を `pending` で初期化
 3. 依存グラフから即座に実行可能なチャンクを特定
-4. 実行状態ファイルを生成（`execution-state.json`、recipe.json と同じディレクトリに配置）
+4. 実行状態ファイルを生成（命名規約: `{recipe_name}-state.json`、recipe.json と同じディレクトリに配置）
 
 **出力:**
 ```json
@@ -363,11 +363,11 @@ Chunk（recipe.json の最終形）
   "project": "AI-Ghost-Shell",
   "total_chunks": 17,
   "ready_chunks": ["chunk-01"],
-  "execution_state_path": "path/to/execution-state.json"
+  "execution_state_path": "path/to/recipe-state.json"
 }
 ```
 
-**execution-state.json の構造:**
+**実行状態ファイルの構造:**
 ```json
 {
   "recipe_path": "path/to/recipe.json",
@@ -386,7 +386,7 @@ Chunk（recipe.json の最終形）
 **入力:**
 ```json
 {
-  "execution_state_path": "path/to/execution-state.json"
+  "execution_state_path": "path/to/recipe-state.json"
 }
 ```
 
@@ -438,7 +438,7 @@ chunk-04 の source_content に含まれる:
 **入力:**
 ```json
 {
-  "execution_state_path": "path/to/execution-state.json",
+  "execution_state_path": "path/to/recipe-state.json",
   "chunk_id": "chunk-01",
   "generated_files": ["src/db/schema.sql", "src/db/connection.ts", "tests/db/schema.test.ts"]
 }
@@ -518,7 +518,7 @@ Dual-Agent TDD で共有バイアスを防いでも、テストの assert が弱
 **入力:**
 ```json
 {
-  "execution_state_path": "path/to/execution-state.json"
+  "execution_state_path": "path/to/recipe-state.json"
 }
 ```
 

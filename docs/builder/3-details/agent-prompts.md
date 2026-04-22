@@ -26,7 +26,7 @@ Builder が起動する 3 つの実行エージェント（Test Agent / Impl Age
 プロンプトは以下の 2 層で組み立てる:
 
 1. **静的部分（テンプレート）** — エージェントの役割・原則・出力フォーマット。チャンクに依存せず、本書で仕様化される
-2. **動的部分（チャンク固有情報）** — `source_content`, `test_code`, `expected_outputs` 等。オーケストレーターが `recipe.json` と `execution-state.json` から組み立てて注入する
+2. **動的部分（チャンク固有情報）** — `source_content`, `test_code`, `expected_outputs` 等。オーケストレーターが `recipe.json` と実行状態ファイル（命名規約: `{recipe_name}-state.json`、例: `recipe-state.json`。詳細は [builder-reference](../4-ref/builder-reference.md) §load_recipe 参照）から組み立てて注入する
 
 ## 2. 組み立てルール（共通仕様）
 
@@ -45,7 +45,7 @@ Builder が起動する 3 つの実行エージェント（Test Agent / Impl Age
 |---|---|
 | `recipe.json` のチャンク定義 | `chunk_id`, `chunk_name`, `source_content`, `implementation_prompt`, `expected_outputs`, `completion_criteria`, `reference_doc_path` |
 | `recipe.json` の全体設定 | `coding_standards_digest` |
-| `execution-state.json` | `depends_on_types`（前チャンク出力から抽出） |
+| 実行状態ファイル | `depends_on_types`（前チャンク出力から抽出） |
 | 直前の Step の出力 | `test_code`（Step 1）, `implementation_code`（Step 2）, `verification_result`（Step 3〜4） |
 
 ### 2.3 オーケストレーター側の責務
@@ -117,7 +117,7 @@ Builder が起動する 3 つの実行エージェント（Test Agent / Impl Age
 | `source_content` | 設計文書の該当セクション | recipe.json |
 | `test_requirements` | interface_tests / boundary_tests / integration_refs | recipe.json |
 | `test_expected_outputs` | 生成すべきテストファイル一覧 | recipe.json（`expected_outputs` からテストファイルを抽出） |
-| `depends_on_types` | 依存チャンクの公開インターフェース（型情報のみ） | execution-state.json |
+| `depends_on_types` | 依存チャンクの公開インターフェース（型情報のみ） | 実行状態ファイル |
 
 ### 3.3 プロンプトテンプレート
 
@@ -286,8 +286,8 @@ Builder が起動する 3 つの実行エージェント（Test Agent / Impl Age
 | `chunk_name` | チャンク名 | recipe.json |
 | `verification_result` | 照合結果（`verification-{chunk_id}.md` の内容） | 直前 Step の出力 |
 | `source_content` | 設計文書の該当セクション | recipe.json |
-| `implementation_code` | Step 2 で生成された実装コード | execution-state.json |
-| `test_code` | Step 1 で生成されたテストコード | execution-state.json |
+| `implementation_code` | Step 2 で生成された実装コード | 実行状態ファイル |
+| `test_code` | Step 1 で生成されたテストコード | 実行状態ファイル |
 
 ### 5.3 プロンプトテンプレート
 
