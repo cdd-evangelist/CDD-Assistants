@@ -7,6 +7,7 @@ import type {
   DocumentAnalysis,
   DocFrontmatter,
   DocLayer,
+  DocTier,
   Decision,
   DriftWarning,
   TechStack,
@@ -88,14 +89,34 @@ function extractSectionNames(content: string): string[] {
 
 // --- wiki-link 参照グラフ ---
 
+/**
+ * 文書内のリンクを抽出する。
+ * - Wiki-link: [[name]] / [[name#section]] (Obsidian 形式)
+ * - Markdown 標準リンク: [text](path/to/doc.md) / [text](doc.md#section)
+ *
+ * いずれもベース名（拡張子・パス除去）を返す。
+ * インラインコード（`...`）内は対象外。
+ */
 function extractWikiLinks(content: string): string[] {
   const links = new Set<string>()
   // インラインコード内は除外
   const cleaned = content.replace(/`[^`]*`/g, '')
-  const pattern = /\[\[([^\]|#]+)(?:#[^\]|]*)?\]\]/g
-  for (const match of cleaned.matchAll(pattern)) {
+
+  // Obsidian 形式 [[name]] / [[name#section]]
+  for (const match of cleaned.matchAll(/\[\[([^\]|#]+)(?:#[^\]|]*)?\]\]/g)) {
     links.add(match[1].trim().replace(/\.md$/, ''))
   }
+
+  // Markdown 標準リンク [text](path/to/file.md) / [text](file.md#section)
+  // 外部URL（http/https/mailto 等）と画像（先頭が !）は除外
+  for (const match of cleaned.matchAll(/(?<!!)\[[^\]]+\]\(([^)]+\.md)(?:#[^)]*)?\)/g)) {
+    const url = match[1]
+    if (/^(https?|mailto):/i.test(url)) continue
+    // パスを除去してベース名のみ抽出
+    const baseName = url.split(/[/\\]/).pop()?.replace(/\.md$/, '')
+    if (baseName) links.add(baseName)
+  }
+
   return [...links]
 }
 
@@ -297,6 +318,31 @@ export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
 // --- メイン ---
 
 // --- パスユーティリティ ---
+
+/**
+ * 相対パスから DocTier を判定する（design-doc-standard.md §5.2）。
+ * - 1-usecases/ → usecase
+ * - 2-features/ → feature
+ * - 3-details/  → detail
+ * - 4-ref/      → reference
+ * - それ以外（ルート直下）→ basic
+ *
+ * フラット構造（フォルダ階層なし）の docs は basic 扱いになる。
+ * Builder のスコープは 3階層モデルに整理された設計文書群であり、
+ * フラット構造は別アシスタント（Cleaner 等）の責務（basic-design.md §1.3）。
+ */
+export function inferTier(relPath: string): DocTier {
+  const normalized = relPath.replace(/\\/g, '/')
+  if (normalized.startsWith('1-usecases/')) return 'usecase'
+  if (normalized.startsWith('2-features/')) return 'feature'
+  if (normalized.startsWith('3-details/'))  return 'detail'
+  if (normalized.startsWith('4-ref/'))      return 'reference'
+  // フォルダプレフィックスが揺れている場合のフォールバック（rare）
+  if (normalized.includes('/details/'))     return 'detail'
+  if (normalized.includes('/features/'))    return 'feature'
+  if (normalized.includes('/usecases/'))    return 'usecase'
+  return 'basic'
+}
 
 /**
  * 複数の絶対パスから最長共通親ディレクトリを計算する。
@@ -521,16 +567,26 @@ export async function analyzeDesign(input: {
   const techStack = extractTechStack(docs)
 
   // 8. DocumentAnalysis を組み立て
+  const tiers: Record<DocTier, string[]> = {
+    basic: [],
+    feature: [],
+    detail: [],
+    usecase: [],
+    reference: [],
+  }
   const documents: DocumentAnalysis[] = docs.map(doc => {
     const fmLayer = doc.frontmatter?.layer as DocLayer | undefined
     const layer: DocLayer = fmLayer && KNOWN_LAYERS.has(fmLayer)
       ? fmLayer
       : inferLayer(doc.name, doc.body)
+    const tier = inferTier(doc.path)
+    tiers[tier].push(doc.path)
     return {
       path: doc.path,
       lines: doc.lines,
       estimated_tokens: doc.estimatedTokens,
       layer,
+      tier,
       sections: doc.sections,
       references_to: dependencyGraph[doc.path] ?? [],
       referenced_by: referencedByMap.get(doc.path) ?? [],
@@ -546,6 +602,7 @@ export async function analyzeDesign(input: {
     documents,
     dependency_graph: dependencyGraph,
     layers,
+    tiers,
     tech_stack: techStack,
     coding_standards: project_dir ? await detectCodingStandards(project_dir) : null,
     total_tokens: totalTokens,

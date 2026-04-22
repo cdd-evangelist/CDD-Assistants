@@ -16,6 +16,13 @@ function makeAnalysis(overrides?: Partial<AnalyzeDesignResult>): AnalyzeDesignRe
       execution: [],
       context: [],
     },
+    tiers: {
+      basic: [],
+      feature: [],
+      detail: [],
+      usecase: [],
+      reference: [],
+    },
     tech_stack: { language: 'TypeScript' },
     coding_standards: null,
     total_tokens: 0,
@@ -28,13 +35,14 @@ function makeDoc(
   layer: DocLayer,
   tokens: number = 2000,
   refs: { to?: string[]; by?: string[] } = {},
-  opts: { sections?: string[]; frontmatter?: DocFrontmatter } = {},
+  opts: { sections?: string[]; frontmatter?: DocFrontmatter; tier?: 'basic' | 'feature' | 'detail' | 'usecase' | 'reference' } = {},
 ) {
   return {
     path,
     lines: Math.ceil(tokens / 5),
     estimated_tokens: tokens,
     layer,
+    tier: opts.tier ?? 'detail', // 既存テストとの互換: デフォルトは detail（チャンク化対象）
     sections: opts.sections ?? ['概要', '詳細'],
     references_to: refs.to ?? [],
     referenced_by: refs.by ?? [],
@@ -550,6 +558,139 @@ describe('splitChunks', () => {
       const integrationChunk = result.chunks.find(c => c.is_integration_test)!
       expect(integrationChunk.implementation_prompt_template).toContain('統合テスト')
       expect(integrationChunk.expected_outputs).toHaveLength(0)
+    })
+  })
+
+  // --- tier ベースのチャンク化（design-doc-standard.md §2 / §5）---
+
+  describe('tier ベースのチャンク化', () => {
+    it('detail tier の文書のみがチャンク化される', async () => {
+      const analysis = makeAnalysis({
+        documents: [
+          makeDoc('basic-design.md', 'foundation', 2000, {}, { tier: 'basic' }),
+          makeDoc('2-features/auth.md', 'specification', 2000, {}, { tier: 'feature' }),
+          makeDoc('3-details/api.md', 'interface', 2000, {}, { tier: 'detail' }),
+        ],
+        layers: {
+          foundation: ['basic-design.md'],
+          specification: ['2-features/auth.md'],
+          usecase: [],
+          interface: ['3-details/api.md'],
+          execution: [],
+          context: [],
+        },
+        tiers: {
+          basic: ['basic-design.md'],
+          feature: ['2-features/auth.md'],
+          detail: ['3-details/api.md'],
+          usecase: [],
+          reference: [],
+        },
+      })
+
+      const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+      const realChunks = result.chunks.filter(c => !c.is_integration_test)
+      expect(realChunks).toHaveLength(1)
+      expect(realChunks[0].name).toContain('api')
+    })
+
+    it('basic / feature 文書はスキップされ警告に出る', async () => {
+      const analysis = makeAnalysis({
+        documents: [
+          makeDoc('basic-design.md', 'foundation', 2000, {}, { tier: 'basic' }),
+          makeDoc('2-features/auth.md', 'specification', 2000, {}, { tier: 'feature' }),
+          makeDoc('3-details/api.md', 'interface', 2000, {}, { tier: 'detail' }),
+        ],
+        layers: {
+          foundation: ['basic-design.md'],
+          specification: ['2-features/auth.md'],
+          usecase: [],
+          interface: ['3-details/api.md'],
+          execution: [],
+          context: [],
+        },
+        tiers: {
+          basic: ['basic-design.md'],
+          feature: ['2-features/auth.md'],
+          detail: ['3-details/api.md'],
+          usecase: [],
+          reference: [],
+        },
+      })
+
+      const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+      // basic / feature の各文書がスキップされた旨の警告
+      expect(result.review_notes.some(n => n.includes('basic-design.md') && n.includes('basic'))).toBe(true)
+      expect(result.review_notes.some(n => n.includes('2-features/auth.md') && n.includes('feature'))).toBe(true)
+    })
+
+    it('detail tier の wiki-link 先（feature）は補助的に source_docs に含まれる', async () => {
+      const analysis = makeAnalysis({
+        documents: [
+          makeDoc('2-features/auth.md', 'specification', 2000, { by: ['3-details/api.md'] }, { tier: 'feature' }),
+          makeDoc('3-details/api.md', 'interface', 2000, { to: ['2-features/auth.md'] }, { tier: 'detail' }),
+        ],
+        layers: {
+          foundation: [],
+          specification: ['2-features/auth.md'],
+          usecase: [],
+          interface: ['3-details/api.md'],
+          execution: [],
+          context: [],
+        },
+        tiers: {
+          basic: [],
+          feature: ['2-features/auth.md'],
+          detail: ['3-details/api.md'],
+          usecase: [],
+          reference: [],
+        },
+        dependency_graph: {
+          '3-details/api.md': ['2-features/auth.md'],
+          '2-features/auth.md': [],
+        },
+      })
+
+      const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+      const realChunks = result.chunks.filter(c => !c.is_integration_test)
+      expect(realChunks).toHaveLength(1)
+      const apiChunk = realChunks[0]
+      // 主 source_docs は 3-details/api.md
+      expect(apiChunk.source_docs.some(d => d.path === '3-details/api.md')).toBe(true)
+      // 参照先の feature 文書も source_docs に追加されている
+      expect(apiChunk.source_docs.some(d => d.path === '2-features/auth.md')).toBe(true)
+    })
+
+    it('detail tier 文書がない場合はチャンク0で要レビュー', async () => {
+      const analysis = makeAnalysis({
+        documents: [
+          makeDoc('basic-design.md', 'foundation', 2000, {}, { tier: 'basic' }),
+          makeDoc('2-features/auth.md', 'specification', 2000, {}, { tier: 'feature' }),
+        ],
+        layers: {
+          foundation: ['basic-design.md'],
+          specification: ['2-features/auth.md'],
+          usecase: [],
+          interface: [],
+          execution: [],
+          context: [],
+        },
+        tiers: {
+          basic: ['basic-design.md'],
+          feature: ['2-features/auth.md'],
+          detail: [],
+          usecase: [],
+          reference: [],
+        },
+      })
+
+      const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+      expect(result.chunks).toHaveLength(0)
+      expect(result.needs_review).toBe(true)
+      expect(result.review_notes.some(n => n.includes('detail') || n.includes('実装対象'))).toBe(true)
     })
   })
 })

@@ -7,6 +7,7 @@ import type {
   AnalyzeDesignResult,
   DocumentAnalysis,
   DocLayer,
+  DocTier,
   SourceDoc,
   TestRequirements,
 } from '../types.js'
@@ -105,6 +106,37 @@ function filterByStatus(
       continue // 意図的廃止。警告なし
     }
     kept.push(doc)
+  }
+  return kept
+}
+
+/**
+ * tier による入力選別（design-doc-standard.md §2 / §5）。
+ * Builder は **detail tier の文書のみ** をチャンク化対象にする。
+ * - basic / feature: 実装の参照のみ。チャンク化しない
+ * - usecase:         validation_context として参照（後段で利用）
+ * - reference:       チャンク化対象外
+ *
+ * basic/feature/reference の文書はスキップ理由を review_notes に記録する。
+ */
+function filterByTier(
+  docs: DocumentAnalysis[],
+  reviewNotes: string[],
+): DocumentAnalysis[] {
+  const kept: DocumentAnalysis[] = []
+  for (const doc of docs) {
+    if (doc.tier === 'detail') {
+      kept.push(doc)
+      continue
+    }
+    if (doc.tier === 'usecase') {
+      // usecase は validation_context として後段の generateCandidates / findRelatedUsecases で使う
+      continue
+    }
+    // basic / feature / reference はスキップ理由を記録
+    reviewNotes.push(
+      `${doc.path}: tier: ${doc.tier} のためチャンク化対象外（detail tier の文書から参照される側）`,
+    )
   }
   return kept
 }
@@ -323,41 +355,67 @@ function generateCandidates(
     .map(d => d.path)
 
   for (const doc of docs) {
-    if (doc.estimated_tokens <= maxInputTokens) {
-      // そのまま1チャンク
-      candidates.push({
-        name: doc.path.replace('.md', ''),
-        description: `${doc.path} の実装`,
-        sourceDocs: [{
-          path: doc.path,
-          sections: ['全体'],
-          include: doc.estimated_tokens <= maxInputTokens / 2 ? 'full' : 'partial',
-        }],
-        estimatedInputTokens: doc.estimated_tokens,
-        implLayer,
-        docPath: doc.path,
-        validationDocs: findRelatedUsecases(doc, allDocs, usecaseDocs),
-      })
-    } else {
-      // トークン上限超過: トップレベルセクションで分割
-      // ※ 実際のセクション分析は docs_dir が必要なので、ここでは分割フラグだけ立てる
-      candidates.push({
-        name: doc.path.replace('.md', ''),
-        description: `${doc.path} の実装（大規模: 要レビュー）`,
-        sourceDocs: [{
-          path: doc.path,
-          sections: doc.sections.length > 0 ? doc.sections : ['全体'],
-          include: 'partial',
-        }],
-        estimatedInputTokens: doc.estimated_tokens,
-        implLayer,
-        docPath: doc.path,
-        validationDocs: findRelatedUsecases(doc, allDocs, usecaseDocs),
-      })
+    // 補助 source_docs: detail tier の wiki-link 先で feature/basic 階層の文書を発見し、
+    // チャンクの追加コンテキストとして含める（design-doc-standard.md §2 — 詳細から
+    // 上位設計を「さかのぼって」読む方針）
+    const supplementary = findSupplementaryDocs(doc, allDocs)
+
+    const baseSourceDoc: SourceDoc = {
+      path: doc.path,
+      sections: doc.estimated_tokens <= maxInputTokens
+        ? ['全体']
+        : (doc.sections.length > 0 ? doc.sections : ['全体']),
+      include: doc.estimated_tokens <= maxInputTokens / 2 ? 'full' : 'partial',
     }
+    const sourceDocs = [baseSourceDoc, ...supplementary]
+
+    candidates.push({
+      name: doc.path.replace('.md', ''),
+      description: doc.estimated_tokens <= maxInputTokens
+        ? `${doc.path} の実装`
+        : `${doc.path} の実装（大規模: 要レビュー）`,
+      sourceDocs,
+      estimatedInputTokens: doc.estimated_tokens,
+      implLayer,
+      docPath: doc.path,
+      validationDocs: findRelatedUsecases(doc, allDocs, usecaseDocs),
+    })
   }
 
   return candidates
+}
+
+/**
+ * detail tier の文書が wiki-link で参照する feature / basic 階層の文書を
+ * 補助的な source_docs として返す。
+ *
+ * 実装方針:
+ *   - doc.references_to に列挙された参照先のうち
+ *   - tier が feature / basic のものだけを抽出
+ *   - usecase は validation_context として別経路で使うので除外
+ *
+ * これにより詳細設計から「上位設計を必要に応じてさかのぼる」読み方が成立する
+ * （design-doc-standard.md §2）。
+ */
+function findSupplementaryDocs(
+  doc: DocumentAnalysis,
+  allDocs: DocumentAnalysis[],
+): SourceDoc[] {
+  const pathToDoc = new Map(allDocs.map(d => [d.path, d]))
+  const supplementary: SourceDoc[] = []
+
+  for (const refPath of doc.references_to) {
+    const refDoc = pathToDoc.get(refPath)
+    if (!refDoc) continue
+    if (refDoc.tier !== 'feature' && refDoc.tier !== 'basic') continue
+    supplementary.push({
+      path: refDoc.path,
+      sections: ['全体'],
+      include: 'partial', // 補助文脈なのでフル取り込みはせず必要箇所のみ
+    })
+  }
+
+  return supplementary
 }
 
 /** 文書に関連するユースケースを探す */
@@ -429,10 +487,15 @@ function assignDependencies(
         if (other.id === chunk.id) continue
         const otherInfo = candidateMap.get(other.id)!
         if (otherInfo.docPath === refTo && !chunk.depends_on.includes(other.id)) {
-          // 同一レイヤー or 下位レイヤーへの参照のみ依存に追加
           const chunkLayerIdx = IMPL_LAYER_ORDER.indexOf(info.implLayer)
           const otherLayerIdx = IMPL_LAYER_ORDER.indexOf(otherInfo.implLayer)
-          if (otherLayerIdx <= chunkLayerIdx) {
+          // 下位レイヤーへの参照は無条件に依存追加（自然な順序）
+          if (otherLayerIdx < chunkLayerIdx) {
+            chunk.depends_on.push(other.id)
+          }
+          // 同一レイヤーで相互参照する場合、循環を避けるため ID 順で一方向のみ追加
+          // （アルファベット順で先に来る方を依存先にする = 先に実装する）
+          else if (otherLayerIdx === chunkLayerIdx && other.id < chunk.id) {
             chunk.depends_on.push(other.id)
           }
         }
@@ -488,12 +551,17 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   const constraints = { ...DEFAULT_CONSTRAINTS, ...userConstraints }
   const reviewNotes: string[] = []
 
-  // 0. status による入力選別（draft/archived を除外）
-  const activeDocs = filterByStatus(analysis.documents, reviewNotes)
+  // 0a. status による入力選別（draft/archived を除外）
+  // statusFiltered は usecase/feature/basic を含む全 tier の文書（補助参照用）
+  const statusFiltered = filterByStatus(analysis.documents, reviewNotes)
 
-  // 1. 実装対象の文書をレイヤーでグループ化
+  // 0b. tier による入力選別（detail のみがチャンク化対象）
+  // chunkableDocs は detail tier のみ
+  const chunkableDocs = filterByTier(statusFiltered, reviewNotes)
+
+  // 1. 実装対象の文書をレイヤーでグループ化（detail tier 内で data/logic/interface/test に分類）
   const implGroups = new Map<ImplLayer, DocumentAnalysis[]>()
-  for (const doc of activeDocs) {
+  for (const doc of chunkableDocs) {
     const implLayer = LAYER_TO_IMPL[doc.layer]
     if (implLayer === 'skip') continue
 
@@ -503,11 +571,13 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   }
 
   // 2. 各グループからチャンク候補を生成
+  // 第2引数 statusFiltered は補助 source_docs（feature/basic）と
+  // validation_context（usecase）の lookup 用に全 tier 含む文書を渡す
   const allCandidates: ChunkCandidate[] = []
   for (const [implLayer, docs] of implGroups) {
     const candidates = generateCandidates(
       docs,
-      activeDocs, // status で選別済みの文書のみを validation_context のソースに使う
+      statusFiltered,
       implLayer,
       constraints.max_input_tokens,
     )
@@ -551,7 +621,7 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
       : undefined
 
     // test_requirements 初期生成（integration_refs は depends_on 解決後に埋める）
-    const sourceDoc = activeDocs.find(d => d.path === candidate.docPath)
+    const sourceDoc = chunkableDocs.find(d => d.path === candidate.docPath)
     const testRequirements = initialTestRequirements(sourceDoc?.sections ?? [])
 
     return {

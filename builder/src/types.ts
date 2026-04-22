@@ -125,6 +125,22 @@ export type DocLayer =
   | 'operation'      // 運用、ベンチマーク、操作フロー
   | 'context'        // 比較、TODO、参考資料
 
+/**
+ * 設計文書の階層（design-doc-standard.md §2 / §5）。
+ * フォルダ構成から判定し、Builder の挙動を切り替える:
+ *   - basic    : docs/ ルート (basic-design.md 等)。実装の参照のみ
+ *   - feature  : 2-features/。実装の参照のみ
+ *   - detail   : 3-details/。**この層のみが実装チャンクを生成する**
+ *   - usecase  : 1-usecases/。validation_context として参照
+ *   - reference: 4-ref/ や階層不明。チャンク化対象外
+ */
+export type DocTier =
+  | 'basic'
+  | 'feature'
+  | 'detail'
+  | 'usecase'
+  | 'reference'
+
 /** decisions.jsonl の各行 */
 export interface Decision {
   id: string
@@ -148,6 +164,7 @@ export interface AnalyzeDesignResult {
   documents: DocumentAnalysis[]
   dependency_graph: Record<string, string[]> // doc → [referenced docs]
   layers: Record<DocLayer, string[]>
+  tiers: Record<DocTier, string[]>           // 階層（basic / feature / detail / usecase / reference）
   tech_stack: Partial<TechStack>
   coding_standards: CodingStandards | null
   total_tokens: number
@@ -158,6 +175,7 @@ export interface DocumentAnalysis {
   lines: number
   estimated_tokens: number
   layer: DocLayer
+  tier: DocTier
   sections: string[]
   references_to: string[]   // この文書が参照する文書
   referenced_by: string[]   // この文書を参照する文書
