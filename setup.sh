@@ -211,15 +211,15 @@ esac
 echo "=== CDD-Assistants セットアップ ==="
 echo ""
 
-# Node.js チェック
+# Node.js チェック（Node 18 は EOL 済み。Builder 実装で fs.readdir の recursive オプションを使うため 20 LTS 以上を要求）
 if ! command -v node &> /dev/null; then
-  echo "エラー: Node.js が見つかりません。Node.js 18 以上をインストールしてください。"
+  echo "エラー: Node.js が見つかりません。Node.js 20 以上をインストールしてください。"
   exit 1
 fi
 
 NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-  echo "エラー: Node.js 18 以上が必要です（現在: $(node -v)）"
+if [ "$NODE_VERSION" -lt 20 ]; then
+  echo "エラー: Node.js 20 以上が必要です（現在: $(node -v)）"
   exit 1
 fi
 
