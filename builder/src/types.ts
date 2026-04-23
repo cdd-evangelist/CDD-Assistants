@@ -306,6 +306,11 @@ export interface CompleteChunkResult {
     tests_passed?: boolean
     test_errors?: string[]
     criteria_met?: string[]
+    lint_passed?: boolean             // coding_standards.scripts.lint の実行結果
+    lint_errors?: string[]
+    format_passed?: boolean           // coding_standards.scripts.format の実行結果
+    format_errors?: string[]
+    test_quality_issues?: string[]    // 静的検証で検出されたテスト品質の問題
   }
   newly_unblocked: string[]
 }

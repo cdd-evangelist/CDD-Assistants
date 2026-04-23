@@ -22,8 +22,15 @@ export function generateCodingStandardsDigest(
 ): string {
   const lines: string[] = ['--- コード規約（プロジェクト遵守） ---']
 
-  if (!codingStandards) {
-    // 言語慣例フォールバック
+  // docs/linters/lint/format のいずれもなければ実質的に規約情報なし → 言語慣例にフォールバック
+  const hasContent =
+    codingStandards != null &&
+    (codingStandards.docs.length > 0 ||
+      codingStandards.linters.length > 0 ||
+      Boolean(codingStandards.scripts?.lint) ||
+      Boolean(codingStandards.scripts?.format))
+
+  if (!hasContent) {
     const fallback = LANGUAGE_FALLBACK[techStack.language]
       ?? `${techStack.language} の標準的なコーディング規約に従うこと`
     lines.push(`- ${fallback}`)

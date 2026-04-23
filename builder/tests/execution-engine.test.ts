@@ -173,6 +173,103 @@ describe('complete_chunk', () => {
   })
 })
 
+describe('complete_chunk の規約適合性検証', () => {
+  it('coding_standards.scripts.lint が pass すれば done になる', async () => {
+    const recipe = createTestRecipe({
+      coding_standards: {
+        docs: ['AGENTS.md'],
+        linters: [],
+        scripts: { lint: 'true' },  // 常に成功
+      },
+    })
+    await writeFile(recipePath, JSON.stringify(recipe, null, 2))
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('done')
+    expect(result.verification.lint_passed).toBe(true)
+  })
+
+  it('coding_standards.scripts.lint が fail すれば failed になる', async () => {
+    const recipe = createTestRecipe({
+      coding_standards: {
+        docs: [],
+        linters: [],
+        scripts: { lint: 'false' },  // 常に失敗
+      },
+    })
+    await writeFile(recipePath, JSON.stringify(recipe, null, 2))
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('failed')
+    expect(result.verification.lint_passed).toBe(false)
+    expect(result.verification.lint_errors).toBeDefined()
+  })
+
+  it('coding_standards.scripts.format も同様に検証される', async () => {
+    const recipe = createTestRecipe({
+      coding_standards: {
+        docs: [],
+        linters: [],
+        scripts: { format: 'false' },
+      },
+    })
+    await writeFile(recipePath, JSON.stringify(recipe, null, 2))
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('failed')
+    expect(result.verification.format_passed).toBe(false)
+  })
+
+  it('coding_standards が null なら規約適合性の検証はスキップする', async () => {
+    // デフォルトの recipe は coding_standards: null
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('done')
+    expect(result.verification.lint_passed).toBeUndefined()
+    expect(result.verification.format_passed).toBeUndefined()
+  })
+
+  it('lint も format も定義されていなければ verification には現れない', async () => {
+    const recipe = createTestRecipe({
+      coding_standards: {
+        docs: ['AGENTS.md'],
+        linters: [],
+        scripts: {},  // lint も format もなし
+      },
+    })
+    await writeFile(recipePath, JSON.stringify(recipe, null, 2))
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('done')
+    expect(result.verification.lint_passed).toBeUndefined()
+  })
+})
+
 describe('coding_standards_digest の注入', () => {
   it('coding_standards が null のとき言語慣例フォールバックをプロンプトに付加する', async () => {
     await loadRecipe(recipePath)
@@ -199,6 +296,25 @@ describe('coding_standards_digest の注入', () => {
     expect(chunk.implementation_prompt).toContain('AGENTS.md')
     expect(chunk.implementation_prompt).toContain('npm run lint')
     expect(chunk.coding_standards_digest).toContain('AGENTS.md')
+  })
+
+  it('coding_standards に test スクリプトしかない場合は言語慣例フォールバックする', async () => {
+    // docs/linters/lint/format が全て空で test だけある = 実質的に規約情報なし
+    const recipe = createTestRecipe({
+      coding_standards: {
+        docs: [],
+        linters: [],
+        scripts: { test: 'vitest run' },
+      },
+    })
+    await writeFile(recipePath, JSON.stringify(recipe, null, 2))
+    await loadRecipe(recipePath)
+
+    const result = await nextChunks(statePath)
+    const chunk = result.ready[0]
+    // ヘッダーだけで中身が空にならず、言語慣例フォールバックが入る
+    expect(chunk.coding_standards_digest).toContain('TypeScript')
+    expect(chunk.coding_standards_digest!.split('\n').length).toBeGreaterThan(1)
   })
 
   it('coding_standards_digest が PreparedChunk フィールドに格納される', async () => {

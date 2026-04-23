@@ -149,4 +149,81 @@ describe('validate_refs', () => {
     expect(result.status).toBe('ok')
     expect(result.issues).toHaveLength(0)
   })
+
+  it('Markdown 標準リンクのリンク切れを検出する', async () => {
+    await writeFile(join(tmpDir, 'BasicDesign.md'), [
+      '# Basic Design',
+      '参照: [missing 文書](missing-doc.md)',
+      '参照: [also missing](nested/also-missing.md)',
+    ].join('\n'))
+
+    const result = await validateRefs([join(tmpDir, 'BasicDesign.md')])
+
+    expect(result.status).toBe('warn')
+    const broken = result.issues.filter(i => i.type === 'broken_md_link')
+    expect(broken).toHaveLength(2)
+    expect(broken[0].message).toContain('missing-doc.md')
+    expect(broken[0].locations[0]).toContain('BasicDesign.md:2')
+  })
+
+  it('Markdown 標準リンクで存在する文書なら検出しない', async () => {
+    await writeFile(join(tmpDir, 'a.md'), '参照: [B](b.md)')
+    await writeFile(join(tmpDir, 'b.md'), '# B')
+
+    const result = await validateRefs([
+      join(tmpDir, 'a.md'),
+      join(tmpDir, 'b.md'),
+    ])
+
+    expect(result.status).toBe('ok')
+    expect(result.issues).toHaveLength(0)
+  })
+
+  it('Markdown 標準リンクのアンカー指定（#）も処理する', async () => {
+    await writeFile(join(tmpDir, 'a.md'), '参照: [B のセクション](b.md#section-1)')
+    await writeFile(join(tmpDir, 'b.md'), '# B\n## Section 1')
+
+    const result = await validateRefs([
+      join(tmpDir, 'a.md'),
+      join(tmpDir, 'b.md'),
+    ])
+
+    expect(result.status).toBe('ok')
+    expect(result.issues).toHaveLength(0)
+  })
+
+  it('外部URL（http/https/mailto）はリンク切れ判定しない', async () => {
+    await writeFile(join(tmpDir, 'doc.md'), [
+      '[Anthropic](https://anthropic.com)',
+      '[mail](mailto:foo@example.com)',
+      '[image](http://example.com/img.png)',
+    ].join('\n'))
+
+    const result = await validateRefs([join(tmpDir, 'doc.md')])
+
+    expect(result.status).toBe('ok')
+    expect(result.issues).toHaveLength(0)
+  })
+
+  it('インラインコード内の Markdown 標準リンクは無視する', async () => {
+    await writeFile(join(tmpDir, 'doc.md'), [
+      '# 説明',
+      '記法は `[text](path.md)` 形式。',
+    ].join('\n'))
+
+    const result = await validateRefs([join(tmpDir, 'doc.md')])
+
+    expect(result.status).toBe('ok')
+    expect(result.issues).toHaveLength(0)
+  })
+
+  it('画像リンク ![alt](img.png) は判定しない', async () => {
+    await writeFile(join(tmpDir, 'doc.md'), '![alt](missing.png)\n![alt](missing.md)')
+
+    const result = await validateRefs([join(tmpDir, 'doc.md')])
+
+    // 画像リンクは broken_md_link を出さない
+    const broken = result.issues.filter(i => i.type === 'broken_md_link')
+    expect(broken).toHaveLength(0)
+  })
 })

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const repoRoot = resolve(__dirname, '../..')
+const builderDir = join(repoRoot, 'builder')
 const docsDir  = join(repoRoot, 'docs/builder')
 const outputPath = '/tmp/cdd-builder-self-recipe.json'
 
@@ -39,7 +40,7 @@ console.log('=== Step 1: analyze_design ===')
 const analysis = await analyzeDesign({
   doc_paths: files,
   project_name: 'cdd-builder',
-  project_dir: repoRoot,
+  project_dir: builderDir,
 })
 console.log(`  documents: ${analysis.documents.length}`)
 console.log(`  total_tokens: ${analysis.total_tokens}`)

@@ -65,6 +65,44 @@ function checkWikiLinks(docs: DocContent[]): ValidationIssue[] {
 }
 
 /**
+ * [text](path.md) 形式の Markdown 標準リンクのリンク切れを検出する。
+ * 画像リンク ![alt](img) と外部URL（http/https/mailto）は対象外。
+ */
+function checkMarkdownLinks(docs: DocContent[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  const docNames = new Set(docs.map(d => d.name))
+
+  // 先頭が `!` でないリンクのみ。URL 部に `.md` を含むものに限定。
+  const mdLinkPattern = /(?<!!)\[[^\]]+\]\(([^)]+\.md)(?:#[^)]*)?\)/g
+
+  for (const doc of docs) {
+    for (let i = 0; i < doc.lines.length; i++) {
+      const line = doc.lines[i]
+      // インラインコード内は無視
+      const lineWithoutCode = line.replace(/`[^`]*`/g, '')
+      for (const match of lineWithoutCode.matchAll(mdLinkPattern)) {
+        const url = match[1]
+        // 外部URL は対象外
+        if (/^(https?|mailto):/i.test(url)) continue
+        // basename を取って拡張子を除き、文書名と照合
+        const baseName = url.split(/[/\\]/).pop()?.replace(/\.md$/, '')
+        if (!baseName) continue
+        if (!docNames.has(baseName)) {
+          issues.push({
+            severity: 'warn',
+            type: 'broken_md_link',
+            message: `[${url}](...) のリンク先文書 ${baseName}.md が見つからない`,
+            locations: [`${doc.name}.md:${i + 1}`],
+          })
+        }
+      }
+    }
+  }
+
+  return issues
+}
+
+/**
  * ユースケース ID（UC-N, AC-N）の欠番を検出する
  */
 function checkUsecaseIds(docs: DocContent[]): ValidationIssue[] {
@@ -183,6 +221,7 @@ export async function validateRefs(docPaths: string[]): Promise<ValidationResult
   // 各チェッカーを実行
   const issues: ValidationIssue[] = [
     ...checkWikiLinks(docs),
+    ...checkMarkdownLinks(docs),
     ...checkUsecaseIds(docs),
     ...checkSectionRefs(docs),
   ]
