@@ -1,5 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
-import { join, basename } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, basename, dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseFrontmatter } from '../utils/frontmatter.js'
 import {
   extractSectionNames,
@@ -18,6 +20,31 @@ import type {
   UnresolvedQuestion,
   ParsedDocument,
 } from '../types.js'
+
+const BUNDLED_STANDARD_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'templates',
+  'design-doc-standard.md',
+)
+
+/**
+ * 設計文書標準のパスを解決する。
+ * プロジェクト内 docs/design-doc-standard.md → プロジェクト直下 → バンドル版 の順。
+ * どこにも存在しなければ null を返す。
+ */
+function resolveStandardDocPath(projectDir: string): string | null {
+  const candidates = [
+    join(projectDir, 'docs', 'design-doc-standard.md'),
+    join(projectDir, 'design-doc-standard.md'),
+  ]
+  for (const c of candidates) {
+    if (existsSync(c)) return resolve(c)
+  }
+  if (existsSync(BUNDLED_STANDARD_PATH)) return BUNDLED_STANDARD_PATH
+  return null
+}
 
 /**
  * プロジェクトディレクトリ内の .md ファイルをパースする。
@@ -158,5 +185,6 @@ export async function designContext(input: DesignContextInput): Promise<DesignCo
     unresolved_questions,
     dependency_graph: dependencyGraph,
     total_tokens: totalTokens,
+    standard_doc_path: resolveStandardDocPath(project_dir),
   }
 }

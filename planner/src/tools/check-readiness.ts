@@ -1,3 +1,7 @@
+import { readdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import type { Dirent } from 'node:fs'
+import { join } from 'node:path'
 import type {
   CheckReadinessInput,
   CheckReadinessResult,
@@ -9,15 +13,97 @@ import type {
 import { designContext } from './design-context.js'
 import { checkConsistency } from './check-consistency.js'
 
+export interface FolderStructureValidation {
+  blockers: Blocker[]
+  warnings: Warning[]
+}
+
 // DI 用の依存型
 export interface ReadinessDeps {
   getDesignContext: (projectDir: string) => Promise<DesignContextResult>
   getConsistency: (projectDir: string) => Promise<CheckConsistencyResult>
+  validateFolderStructure: (projectDir: string) => Promise<FolderStructureValidation>
+}
+
+/**
+ * 設計文書標準 §5.1 のフォルダ構成に従っているかを検証する。
+ *
+ * 構成種別:
+ * - 単一構成: project_dir 直下に basic-design.md がある
+ * - 複数コンポーネント構成: サブフォルダのいずれかが basic-design.md を持つ（§5.4）
+ *
+ * Builder 必須項目（basic-design.md, 3-details/）の欠落は blocker、
+ * 推奨項目（1-usecases/, 2-features/）の欠落は warning。
+ */
+export async function defaultValidateFolderStructure(
+  projectDir: string,
+): Promise<FolderStructureValidation> {
+  const blockers: Blocker[] = []
+  const warnings: Warning[] = []
+
+  type Target = { name: string | null; dir: string }
+
+  const directBasic = existsSync(join(projectDir, 'basic-design.md'))
+  let targets: Target[] = []
+
+  if (directBasic) {
+    targets = [{ name: null, dir: projectDir }]
+  } else {
+    let entries: Dirent[] = []
+    try {
+      entries = await readdir(projectDir, { withFileTypes: true })
+    } catch {
+      // ディレクトリが読めない場合は components 空のまま進める
+    }
+    const components: Target[] = entries
+      .filter(e => e.isDirectory() && existsSync(join(projectDir, e.name, 'basic-design.md')))
+      .map(e => ({ name: e.name, dir: join(projectDir, e.name) }))
+
+    if (components.length === 0) {
+      blockers.push({
+        type: 'missing_basic_design',
+        message: 'basic-design.md が見つからない',
+        suggestion:
+          'project_dir 直下、またはコンポーネントフォルダ直下に basic-design.md を配置してください（設計文書標準 §5.1 参照）',
+      })
+      return { blockers, warnings }
+    }
+    targets = components
+  }
+
+  for (const t of targets) {
+    const ctx = t.name ? `（component: ${t.name}）` : ''
+
+    if (!existsSync(join(t.dir, '3-details'))) {
+      blockers.push({
+        type: 'missing_details_dir',
+        message: `Builder のチャンク化対象フォルダ 3-details/ が存在しない${ctx}`,
+        suggestion: `${t.dir}/3-details/ を作成し、詳細設計文書を配置してください（設計文書標準 §5.1 参照）`,
+      })
+    }
+
+    if (!existsSync(join(t.dir, '1-usecases'))) {
+      warnings.push({
+        type: 'missing_usecases_dir',
+        message: `推奨フォルダ 1-usecases/ が存在しない${ctx}`,
+      })
+    }
+
+    if (!existsSync(join(t.dir, '2-features'))) {
+      warnings.push({
+        type: 'missing_features_dir',
+        message: `推奨フォルダ 2-features/ が存在しない${ctx}`,
+      })
+    }
+  }
+
+  return { blockers, warnings }
 }
 
 const defaultDeps: ReadinessDeps = {
   getDesignContext: (dir) => designContext({ project_dir: dir }),
   getConsistency: (dir) => checkConsistency({ project_dir: dir }),
+  validateFolderStructure: defaultValidateFolderStructure,
 }
 
 /**
@@ -29,13 +115,14 @@ export async function checkReadiness(
 ): Promise<CheckReadinessResult> {
   const { project_dir, required_coverage = [] } = input
 
-  const [ctx, consistency] = await Promise.all([
+  const [ctx, consistency, folderStructure] = await Promise.all([
     deps.getDesignContext(project_dir),
     deps.getConsistency(project_dir),
+    deps.validateFolderStructure(project_dir),
   ])
 
-  const blockers: Blocker[] = []
-  const warnings: Warning[] = []
+  const blockers: Blocker[] = [...folderStructure.blockers]
+  const warnings: Warning[] = [...folderStructure.warnings]
 
   // 1. 文書完了チェック
   const incomplete = ctx.documents.filter(d => d.status !== 'complete')

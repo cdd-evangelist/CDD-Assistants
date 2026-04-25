@@ -126,6 +126,7 @@ export interface DesignContextResult {
   unresolved_questions: UnresolvedQuestion[]
   dependency_graph: Record<string, string[]>
   total_tokens: number
+  standard_doc_path: string | null
 }
 
 // --- suggest_approach ---

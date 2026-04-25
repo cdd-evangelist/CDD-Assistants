@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { checkReadiness } from '../src/tools/check-readiness.js'
+import {
+  checkReadiness,
+  defaultValidateFolderStructure,
+} from '../src/tools/check-readiness.js'
 import type { ReadinessDeps } from '../src/tools/check-readiness.js'
 import type { DesignContextResult, CheckConsistencyResult } from '../src/types.js'
 
@@ -28,6 +31,7 @@ function makeDeps(
     unresolved_questions: [],
     dependency_graph: {},
     total_tokens: 0,
+    standard_doc_path: null,
     ...ctx,
   }
   const defaultConsistency: CheckConsistencyResult = {
@@ -39,6 +43,8 @@ function makeDeps(
   return {
     getDesignContext: async () => defaultCtx,
     getConsistency: async () => defaultConsistency,
+    // フォルダ構成検証は既存テストでは無関心な観点なので空を返す
+    validateFolderStructure: async () => ({ blockers: [], warnings: [] }),
   }
 }
 
@@ -173,7 +179,7 @@ describe('checkReadiness', () => {
   })
 
   it('実際のファイルシステムで動作する（DI なし）', async () => {
-    await writeFile(join(tmpDir, 'a.md'), [
+    await writeFile(join(tmpDir, 'basic-design.md'), [
       '---',
       'status: complete',
       'layer: foundation',
@@ -182,6 +188,7 @@ describe('checkReadiness', () => {
       '## 概要',
       'TypeScript で実装する。',
     ].join('\n'))
+    await mkdir(join(tmpDir, '3-details'), { recursive: true })
 
     const result = await checkReadiness({ project_dir: tmpDir })
 
@@ -193,8 +200,85 @@ describe('checkReadiness', () => {
     const fixturesDir = join(import.meta.dirname, 'fixtures', 'sample-project')
     const result = await checkReadiness({ project_dir: fixturesDir })
 
-    // ai-usecases.md が draft なので not ready
+    // ai-usecases.md が draft + フォルダ構成違反のため not ready
     expect(result.ready).toBe(false)
     expect(result.blockers.length).toBeGreaterThan(0)
+  })
+
+  describe('defaultValidateFolderStructure', () => {
+    it('basic-design.md と 3-details/ が揃っていれば blocker なし', async () => {
+      await writeFile(join(tmpDir, 'basic-design.md'), '# 基本')
+      await mkdir(join(tmpDir, '3-details'), { recursive: true })
+      await mkdir(join(tmpDir, '1-usecases'), { recursive: true })
+      await mkdir(join(tmpDir, '2-features'), { recursive: true })
+
+      const result = await defaultValidateFolderStructure(tmpDir)
+
+      expect(result.blockers).toHaveLength(0)
+      expect(result.warnings).toHaveLength(0)
+    })
+
+    it('basic-design.md が無いと missing_basic_design blocker', async () => {
+      const result = await defaultValidateFolderStructure(tmpDir)
+      expect(result.blockers.some(b => b.type === 'missing_basic_design')).toBe(true)
+    })
+
+    it('3-details/ が無いと missing_details_dir blocker', async () => {
+      await writeFile(join(tmpDir, 'basic-design.md'), '# 基本')
+
+      const result = await defaultValidateFolderStructure(tmpDir)
+      expect(result.blockers.some(b => b.type === 'missing_details_dir')).toBe(true)
+    })
+
+    it('1-usecases/ が無いと missing_usecases_dir warning', async () => {
+      await writeFile(join(tmpDir, 'basic-design.md'), '# 基本')
+      await mkdir(join(tmpDir, '3-details'), { recursive: true })
+      await mkdir(join(tmpDir, '2-features'), { recursive: true })
+
+      const result = await defaultValidateFolderStructure(tmpDir)
+      expect(result.blockers).toHaveLength(0)
+      expect(result.warnings.some(w => w.type === 'missing_usecases_dir')).toBe(true)
+    })
+
+    it('2-features/ が無いと missing_features_dir warning', async () => {
+      await writeFile(join(tmpDir, 'basic-design.md'), '# 基本')
+      await mkdir(join(tmpDir, '3-details'), { recursive: true })
+      await mkdir(join(tmpDir, '1-usecases'), { recursive: true })
+
+      const result = await defaultValidateFolderStructure(tmpDir)
+      expect(result.blockers).toHaveLength(0)
+      expect(result.warnings.some(w => w.type === 'missing_features_dir')).toBe(true)
+    })
+
+    it('複数コンポーネント構成で各コンポーネントを検証する', async () => {
+      // planner: 完備、builder: 3-details/ 欠落
+      await mkdir(join(tmpDir, 'planner', '3-details'), { recursive: true })
+      await mkdir(join(tmpDir, 'planner', '1-usecases'), { recursive: true })
+      await mkdir(join(tmpDir, 'planner', '2-features'), { recursive: true })
+      await writeFile(join(tmpDir, 'planner', 'basic-design.md'), '# planner')
+
+      await mkdir(join(tmpDir, 'builder'), { recursive: true })
+      await writeFile(join(tmpDir, 'builder', 'basic-design.md'), '# builder')
+
+      const result = await defaultValidateFolderStructure(tmpDir)
+
+      // builder の 3-details/ 欠落のみ blocker
+      const detailsBlockers = result.blockers.filter(b => b.type === 'missing_details_dir')
+      expect(detailsBlockers).toHaveLength(1)
+      expect(detailsBlockers[0].message).toContain('builder')
+
+      // builder の usecases/features 欠落は warning
+      const builderWarnings = result.warnings.filter(w => w.message.includes('builder'))
+      expect(builderWarnings.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('basic-design.md がどこにも無ければ missing_basic_design blocker のみ返す', async () => {
+      await mkdir(join(tmpDir, 'planner'), { recursive: true })
+      // basic-design.md は無い
+
+      const result = await defaultValidateFolderStructure(tmpDir)
+      expect(result.blockers).toHaveLength(1)
+      expect(result.blockers[0].type).toBe('missing_basic_design')
+    })
   })
 })

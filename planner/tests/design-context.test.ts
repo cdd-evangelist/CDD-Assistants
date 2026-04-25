@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { designContext } from '../src/tools/design-context.js'
 
@@ -165,5 +165,44 @@ describe('designContext', () => {
 
     const result = await designContext({ project_dir: tmpDir })
     expect(result.total_tokens).toBeGreaterThan(0)
+  })
+
+  describe('standard_doc_path の解決', () => {
+    it('プロジェクト内 docs/design-doc-standard.md があればそれを返す', async () => {
+      await mkdir(join(tmpDir, 'docs'), { recursive: true })
+      const standardPath = join(tmpDir, 'docs', 'design-doc-standard.md')
+      await writeFile(standardPath, '# 標準')
+
+      const result = await designContext({ project_dir: tmpDir })
+      expect(result.standard_doc_path).toBe(resolve(standardPath))
+    })
+
+    it('プロジェクト直下 design-doc-standard.md があればそれを返す', async () => {
+      const standardPath = join(tmpDir, 'design-doc-standard.md')
+      await writeFile(standardPath, '# 標準')
+
+      const result = await designContext({ project_dir: tmpDir })
+      expect(result.standard_doc_path).toBe(resolve(standardPath))
+    })
+
+    it('プロジェクト内に標準が無ければバンドル版にフォールバックする', async () => {
+      await writeFile(join(tmpDir, 'a.md'), '# A')
+
+      const result = await designContext({ project_dir: tmpDir })
+      // バンドル版は planner/templates/design-doc-standard.md を指す絶対パス
+      expect(result.standard_doc_path).not.toBeNull()
+      expect(result.standard_doc_path).toMatch(/templates[\\/]design-doc-standard\.md$/)
+    })
+
+    it('プロジェクト内 docs/ がプロジェクト直下より優先される', async () => {
+      await mkdir(join(tmpDir, 'docs'), { recursive: true })
+      const docsPath = join(tmpDir, 'docs', 'design-doc-standard.md')
+      const rootPath = join(tmpDir, 'design-doc-standard.md')
+      await writeFile(docsPath, '# docs')
+      await writeFile(rootPath, '# root')
+
+      const result = await designContext({ project_dir: tmpDir })
+      expect(result.standard_doc_path).toBe(resolve(docsPath))
+    })
   })
 })
