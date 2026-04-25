@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { trackDecision } from '../src/tools/track-decision.js'
+import { resolveDecisionsPath } from '../src/utils/decisions.js'
 
 let tmpDir: string
 
@@ -13,6 +15,16 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true })
 })
+
+async function writeDecisionsFile(projectDir: string, content: string): Promise<void> {
+  const path = resolveDecisionsPath(projectDir)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content)
+}
+
+async function readDecisionsFile(projectDir: string): Promise<string> {
+  return readFile(resolveDecisionsPath(projectDir), 'utf-8')
+}
 
 describe('trackDecision', () => {
   it('新規プロジェクトで DEC-001 を生成する', async () => {
@@ -31,7 +43,7 @@ describe('trackDecision', () => {
 
   it('既存の decisions.jsonl に追記する', async () => {
     await writeFile(join(tmpDir, 'a.md'), '# A')
-    await writeFile(join(tmpDir, 'decisions.jsonl'),
+    await writeDecisionsFile(tmpDir,
       JSON.stringify({ id: 'DEC-001', decision: '既存', rationale: '', affects: ['a.md'], created_at: '2026-03-01T00:00:00Z' }) + '\n'
     )
 
@@ -45,7 +57,7 @@ describe('trackDecision', () => {
     expect(result.decision_id).toBe('DEC-002')
 
     // ファイルに2行あることを確認
-    const content = await readFile(join(tmpDir, 'decisions.jsonl'), 'utf-8')
+    const content = await readDecisionsFile(tmpDir)
     const lines = content.trim().split('\n').filter(l => l.trim())
     expect(lines).toHaveLength(2)
 
@@ -55,7 +67,7 @@ describe('trackDecision', () => {
   })
 
   it('連番が正しくインクリメントされる', async () => {
-    await writeFile(join(tmpDir, 'decisions.jsonl'), [
+    await writeDecisionsFile(tmpDir, [
       JSON.stringify({ id: 'DEC-001', decision: 'a', rationale: '', affects: [], created_at: '' }),
       JSON.stringify({ id: 'DEC-005', decision: 'b', rationale: '', affects: [], created_at: '' }),
     ].join('\n') + '\n')
@@ -101,7 +113,7 @@ describe('trackDecision', () => {
       supersedes: '旧: messages テーブル',
     })
 
-    const content = await readFile(join(tmpDir, 'decisions.jsonl'), 'utf-8')
+    const content = await readDecisionsFile(tmpDir)
     const parsed = JSON.parse(content.trim())
     expect(parsed.supersedes).toBe('旧: messages テーブル')
   })
@@ -117,5 +129,37 @@ describe('trackDecision', () => {
     // ISO 8601 形式のチェック
     const date = new Date(result.recorded_at)
     expect(date.toISOString()).toBe(result.recorded_at)
+  })
+
+  it('4-ref/ ディレクトリが無くても自動作成して書き込む', async () => {
+    expect(existsSync(join(tmpDir, '4-ref'))).toBe(false)
+
+    await trackDecision({
+      project_dir: tmpDir,
+      decision: '初回',
+      rationale: '',
+      affects: [],
+    })
+
+    expect(existsSync(resolveDecisionsPath(tmpDir))).toBe(true)
+  })
+})
+
+describe('resolveDecisionsPath', () => {
+  it('project_dir 配下に docs/ があれば docs/4-ref/decisions.jsonl', async () => {
+    await mkdir(join(tmpDir, 'docs'), { recursive: true })
+    const result = resolveDecisionsPath(tmpDir)
+    expect(result).toBe(join(tmpDir, 'docs', '4-ref', 'decisions.jsonl'))
+  })
+
+  it('project_dir 末尾が docs なら <project_dir>/4-ref/decisions.jsonl', () => {
+    const docsDir = join(tmpDir, 'docs')
+    const result = resolveDecisionsPath(docsDir)
+    expect(result).toBe(join(docsDir, '4-ref', 'decisions.jsonl'))
+  })
+
+  it('docs/ なし（フラット構成）なら <project_dir>/4-ref/decisions.jsonl', () => {
+    const result = resolveDecisionsPath(tmpDir)
+    expect(result).toBe(join(tmpDir, '4-ref', 'decisions.jsonl'))
   })
 })

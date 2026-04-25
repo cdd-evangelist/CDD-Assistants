@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
+import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { checkConsistency } from '../src/tools/check-consistency.js'
+import { resolveDecisionsPath } from '../src/utils/decisions.js'
+
+async function writeDecisionsFile(projectDir: string, content: string): Promise<void> {
+  const path = resolveDecisionsPath(projectDir)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content)
+}
 
 let tmpDir: string
 
@@ -144,7 +151,7 @@ describe('checkConsistency', () => {
   describe('decisions', () => {
     it('decisions.jsonl の影響文書が存在しない場合に warn', async () => {
       await writeFile(join(tmpDir, 'a.md'), '# A')
-      await writeFile(join(tmpDir, 'decisions.jsonl'),
+      await writeDecisionsFile(tmpDir,
         JSON.stringify({
           id: 'DEC-001', decision: 'test', rationale: '',
           affects: ['a.md', 'missing.md'], created_at: '2026-03-01T00:00:00Z',
@@ -169,7 +176,7 @@ describe('checkConsistency', () => {
         '---',
         '# A',
       ].join('\n'))
-      await writeFile(join(tmpDir, 'decisions.jsonl'), [
+      await writeDecisionsFile(tmpDir, [
         JSON.stringify({ id: 'DEC-001', decision: 'a', rationale: '', affects: ['a.md'], created_at: '' }),
         JSON.stringify({ id: 'DEC-002', decision: 'b', rationale: '', affects: ['a.md'], created_at: '' }),
       ].join('\n'))
@@ -213,7 +220,7 @@ describe('checkConsistency', () => {
         '---',
         '# A',
       ].join('\n'))
-      await writeFile(join(tmpDir, 'decisions.jsonl'),
+      await writeDecisionsFile(tmpDir,
         JSON.stringify({
           id: 'DEC-001', decision: 'test', rationale: '',
           affects: ['a.md'], created_at: '2026-03-01T00:00:00Z',
@@ -237,7 +244,7 @@ describe('checkConsistency', () => {
         '---',
         '# A',
       ].join('\n'))
-      await writeFile(join(tmpDir, 'decisions.jsonl'),
+      await writeDecisionsFile(tmpDir,
         JSON.stringify({
           id: 'DEC-001', decision: 'test', rationale: '',
           affects: ['a.md'], created_at: '2026-03-01T00:00:00Z',

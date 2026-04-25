@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { designContext } from '../src/tools/design-context.js'
+import { resolveDecisionsPath } from '../src/utils/decisions.js'
+
+async function writeDecisionsFile(projectDir: string, content: string): Promise<void> {
+  const path = resolveDecisionsPath(projectDir)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content)
+}
 
 let tmpDir: string
 
@@ -101,12 +108,13 @@ describe('designContext', () => {
 
   it('decisions.jsonl から決定事項を収集する', async () => {
     await writeFile(join(tmpDir, 'a.md'), '---\nstatus: complete\ndecisions:\n  - DEC-001\n---\n# A\n## S\n内容')
-    await writeFile(join(tmpDir, 'decisions.jsonl'),
+    await writeDecisionsFile(tmpDir,
       JSON.stringify({ id: 'DEC-001', decision: 'テスト決定', rationale: '', affects: ['a.md'], created_at: '2026-03-01T00:00:00Z' })
     )
 
     const result = await designContext({ project_dir: tmpDir })
-    expect(result.documents[0].decisions).toContain('DEC-001')
+    const docA = result.documents.find(d => d.path === 'a.md')!
+    expect(docA.decisions).toContain('DEC-001')
   })
 
   it('open_questions をフロントマターと本文から収集する', async () => {
