@@ -115,6 +115,8 @@ const LAYER_HEURISTICS: Array<{ layer: DocLayer; patterns: RegExp[] }> = [
 ]
 
 const NAME_HINTS: Array<{ pattern: RegExp; layer: DocLayer }> = [
+  { pattern: /^readme$/i, layer: 'context' },
+  { pattern: /^changelog$/i, layer: 'context' },
   { pattern: /usecase/i, layer: 'usecase' },
   { pattern: /cli/i, layer: 'interface' },
   { pattern: /mcp.*tool/i, layer: 'interface' },

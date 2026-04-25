@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, basename, dirname, resolve } from 'node:path'
+import type { Dirent } from 'node:fs'
+import { join, basename, dirname, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseFrontmatter } from '../utils/frontmatter.js'
 import {
@@ -46,22 +47,47 @@ function resolveStandardDocPath(projectDir: string): string | null {
   return null
 }
 
+const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'target'])
+
 /**
- * プロジェクトディレクトリ内の .md ファイルをパースする。
+ * project_dir 配下を再帰的にスキャンして .md ファイルパスを集める。
+ */
+async function collectMarkdownFiles(currentDir: string, results: string[]): Promise<void> {
+  let entries: Dirent[]
+  try {
+    entries = await readdir(currentDir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (entry.name.startsWith('.')) continue
+      if (EXCLUDED_DIRS.has(entry.name)) continue
+      await collectMarkdownFiles(join(currentDir, entry.name), results)
+    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      results.push(join(currentDir, entry.name))
+    }
+  }
+}
+
+/**
+ * プロジェクトディレクトリ配下の .md ファイルを再帰的にパースする。
+ * 文書のパスは project_dir からの相対パス（POSIX 形式）で保存する。
  */
 async function parseDocuments(projectDir: string): Promise<ParsedDocument[]> {
-  const entries = await readdir(projectDir)
-  const mdFiles = entries.filter(f => f.endsWith('.md')).sort()
+  const filePaths: string[] = []
+  await collectMarkdownFiles(projectDir, filePaths)
+  filePaths.sort()
 
   const docs: ParsedDocument[] = []
-  for (const file of mdFiles) {
-    const filePath = join(projectDir, file)
+  for (const filePath of filePaths) {
     const content = await readFile(filePath, 'utf-8')
-    const name = basename(file, '.md')
+    const relPath = relative(projectDir, filePath).replace(/\\/g, '/')
+    const name = basename(filePath, '.md')
     const { frontmatter, body } = parseFrontmatter(content)
 
     docs.push({
-      path: file,
+      path: relPath,
       name,
       content,
       body,
@@ -74,6 +100,19 @@ async function parseDocuments(projectDir: string): Promise<ParsedDocument[]> {
   }
 
   return docs
+}
+
+/**
+ * project_dir からプロジェクト名を解決する。
+ * 末尾セグメントが "docs" の場合は親ディレクトリ名を使う。
+ */
+function resolveProjectName(projectDir: string): string {
+  const baseName = basename(projectDir)
+  if (baseName === 'docs') {
+    const parent = basename(dirname(projectDir))
+    if (parent) return parent
+  }
+  return baseName
 }
 
 /**
@@ -174,8 +213,8 @@ export async function designContext(input: DesignContextInput): Promise<DesignCo
     }
   }
 
-  // プロジェクト名をディレクトリ名から推定
-  const project = basename(project_dir)
+  // プロジェクト名をディレクトリ名から推定（docs/ を直接渡されたら親を使う）
+  const project = resolveProjectName(project_dir)
   const totalTokens = docs.reduce((sum, d) => sum + d.estimatedTokens, 0)
 
   return {

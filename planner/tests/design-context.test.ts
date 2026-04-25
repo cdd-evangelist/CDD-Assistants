@@ -205,4 +205,129 @@ describe('designContext', () => {
       expect(result.standard_doc_path).toBe(resolve(docsPath))
     })
   })
+
+  describe('再帰スキャン', () => {
+    it('サブディレクトリ配下の .md ファイルを再帰的に拾う', async () => {
+      await mkdir(join(tmpDir, '2-features'), { recursive: true })
+      await mkdir(join(tmpDir, '3-details'), { recursive: true })
+      await writeFile(join(tmpDir, 'basic-design.md'), '# 基本')
+      await writeFile(join(tmpDir, '2-features', 'auth.md'), '# 認証')
+      await writeFile(join(tmpDir, '3-details', 'mcp-tools.md'), '# MCP')
+
+      const result = await designContext({ project_dir: tmpDir })
+
+      const paths = result.documents.map(d => d.path).sort()
+      expect(paths).toEqual([
+        '2-features/auth.md',
+        '3-details/mcp-tools.md',
+        'basic-design.md',
+      ])
+    })
+
+    it('複数コンポーネント構成（component/3-details/）も拾う', async () => {
+      await mkdir(join(tmpDir, 'planner', '3-details'), { recursive: true })
+      await mkdir(join(tmpDir, 'builder', '3-details'), { recursive: true })
+      await writeFile(join(tmpDir, 'planner', 'basic-design.md'), '# planner')
+      await writeFile(join(tmpDir, 'planner', '3-details', 'tools.md'), '# tools')
+      await writeFile(join(tmpDir, 'builder', 'basic-design.md'), '# builder')
+
+      const result = await designContext({ project_dir: tmpDir })
+
+      const paths = result.documents.map(d => d.path).sort()
+      expect(paths).toContain('planner/basic-design.md')
+      expect(paths).toContain('planner/3-details/tools.md')
+      expect(paths).toContain('builder/basic-design.md')
+    })
+
+    it('隠しディレクトリ（.git など）を除外する', async () => {
+      await mkdir(join(tmpDir, '.git'), { recursive: true })
+      await writeFile(join(tmpDir, '.git', 'should-not-find.md'), '# 隠れ')
+      await writeFile(join(tmpDir, 'visible.md'), '# 見える')
+
+      const result = await designContext({ project_dir: tmpDir })
+
+      const paths = result.documents.map(d => d.path)
+      expect(paths).toContain('visible.md')
+      expect(paths.some(p => p.includes('.git'))).toBe(false)
+    })
+
+    it('node_modules / dist / build / target を除外する', async () => {
+      for (const dir of ['node_modules', 'dist', 'build', 'target']) {
+        await mkdir(join(tmpDir, dir), { recursive: true })
+        await writeFile(join(tmpDir, dir, 'should-not-find.md'), '# 除外')
+      }
+      await writeFile(join(tmpDir, 'visible.md'), '# 見える')
+
+      const result = await designContext({ project_dir: tmpDir })
+
+      const paths = result.documents.map(d => d.path)
+      expect(paths).toEqual(['visible.md'])
+    })
+
+    it('文書のパスは POSIX 形式の相対パスで保存される', async () => {
+      await mkdir(join(tmpDir, '3-details'), { recursive: true })
+      await writeFile(join(tmpDir, '3-details', 'tools.md'), '# tools')
+
+      const result = await designContext({ project_dir: tmpDir })
+
+      expect(result.documents[0].path).toBe('3-details/tools.md')
+      expect(result.documents[0].path).not.toContain('\\')
+    })
+  })
+
+  describe('プロジェクト名の解決', () => {
+    it('通常のディレクトリ名はそのまま使われる', async () => {
+      await writeFile(join(tmpDir, 'a.md'), '# A')
+      const result = await designContext({ project_dir: tmpDir })
+      // tmpDir は mkdtemp が生成したパスなので、末尾セグメントがそのまま入る
+      expect(result.project).not.toBe('docs')
+    })
+
+    it('末尾が docs の場合は親ディレクトリ名を使う', async () => {
+      const docsDir = join(tmpDir, 'docs')
+      await mkdir(docsDir, { recursive: true })
+      await writeFile(join(docsDir, 'a.md'), '# A')
+
+      const result = await designContext({ project_dir: docsDir })
+
+      // tmpDir の末尾セグメントが project になる
+      const expected = tmpDir.split(/[/\\]/).filter(Boolean).pop()
+      expect(result.project).toBe(expected)
+    })
+  })
+
+  describe('layer 推定', () => {
+    it('README.md は layer: context として扱う', async () => {
+      await writeFile(join(tmpDir, 'README.md'), [
+        '# プロジェクト',
+        '## ユースケース',
+        '- usecase 1',
+      ].join('\n'))
+
+      const result = await designContext({ project_dir: tmpDir })
+      const readme = result.documents.find(d => d.path === 'README.md')!
+      expect(readme.layer).toBe('context')
+    })
+
+    it('CHANGELOG.md は layer: context として扱う', async () => {
+      await writeFile(join(tmpDir, 'CHANGELOG.md'), '# 変更履歴\n## 2026-04-25\n- 修正')
+
+      const result = await designContext({ project_dir: tmpDir })
+      const changelog = result.documents.find(d => d.path === 'CHANGELOG.md')!
+      expect(changelog.layer).toBe('context')
+    })
+
+    it('フロントマターの layer はファイル名 hint より優先される', async () => {
+      await writeFile(join(tmpDir, 'README.md'), [
+        '---',
+        'layer: foundation',
+        '---',
+        '# README',
+      ].join('\n'))
+
+      const result = await designContext({ project_dir: tmpDir })
+      const readme = result.documents.find(d => d.path === 'README.md')!
+      expect(readme.layer).toBe('foundation')
+    })
+  })
 })
