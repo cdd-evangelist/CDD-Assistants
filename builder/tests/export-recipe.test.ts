@@ -333,7 +333,7 @@ describe('exportRecipe', () => {
     }
 
     const result = await exportRecipe(input)
-    expect(result.recipe_path).toContain('nested/deep/recipe.json')
+    expect(result.recipe_path).toContain(join('nested', 'deep', 'recipe.json'))
     const recipe: Recipe = JSON.parse(await readFile(result.recipe_path, 'utf-8'))
     expect(recipe.chunks).toHaveLength(1)
   })
