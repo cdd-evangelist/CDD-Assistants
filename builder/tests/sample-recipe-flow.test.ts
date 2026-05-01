@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, writeFile, readFile, mkdir, cp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { loadRecipe } from '../src/execution-engine/load-recipe.js'
 import { nextChunks } from '../src/execution-engine/next-chunks.js'
@@ -17,7 +18,7 @@ beforeEach(async () => {
   statePath = join(tmpDir, 'recipe-state.json')
 
   // サンプルレシピをコピー
-  const fixtureRecipe = new URL('./fixtures/sample-recipe.json', import.meta.url).pathname
+  const fixtureRecipe = fileURLToPath(new URL('./fixtures/sample-recipe.json', import.meta.url))
   await cp(fixtureRecipe, recipePath)
 })
 
