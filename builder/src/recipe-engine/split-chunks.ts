@@ -658,6 +658,21 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
   // 6. レビューフラグ
   // expected_outputs が空 → 必ずレビュー必要
   const needsReview = true // 常に要レビュー（expected_outputs, implementation_prompt_template は汎用テンプレート）
+
+  // 文書間参照が 1 件も検出されなかった場合の診断ヒント。documents.length >= 3 を閾値とし、
+  // 小規模プロジェクトの誤検出を避ける。バッククォート / wiki-link / markdown link / frontmatter
+  // のいずれの記法も拾えなかったケースの気付きを促す。
+  if (analysis.documents.length >= 3) {
+    const totalEdges = Object.values(analysis.dependency_graph)
+      .reduce((sum, refs) => sum + refs.length, 0)
+    if (totalEdges === 0) {
+      reviewNotes.push(
+        '文書間参照が 1 件も検出されませんでした。'
+          + '参照は [text](path.md) / [[name]] / `path.md` / frontmatter references のいずれかで記述してください',
+      )
+    }
+  }
+
   reviewNotes.push(
     '各チャンクの expected_outputs を設定してください',
     '各チャンクの implementation_prompt_template を具体化してください',

@@ -102,6 +102,76 @@ describe('analyzeDesign', () => {
     expect(docB.referenced_by).toContain('a.md')
   })
 
+  it('バッククォート記法の *.md 参照から依存グラフを構築する（#16）', async () => {
+    // basic-design.md の「文書マップ」テーブル形式と、本文中のインライン記法
+    await writeFile(join(tmpDir, 'basic-design.md'), [
+      '# 基本設計',
+      '## 文書マップ',
+      '| 文書 | 役割 |',
+      '|---|---|',
+      '| `overview.md` | 概要 |',
+      '| `3-details/api-spec.md` | API |',
+      '',
+      '詳細は `module-design.md` を参照。',
+    ].join('\n'))
+    await writeFile(join(tmpDir, 'overview.md'), '# 概要')
+    await writeFile(join(tmpDir, 'api-spec.md'), '# API')
+    await writeFile(join(tmpDir, 'module-design.md'), '# モジュール設計')
+
+    const result = await analyzeDesign({
+      doc_paths: [
+        join(tmpDir, 'basic-design.md'),
+        join(tmpDir, 'overview.md'),
+        join(tmpDir, 'api-spec.md'),
+        join(tmpDir, 'module-design.md'),
+      ],
+      project_name: 'Test',
+    })
+
+    const basicDeps = result.dependency_graph['basic-design.md']
+    expect(basicDeps).toContain('overview.md')
+    expect(basicDeps).toContain('api-spec.md')
+    expect(basicDeps).toContain('module-design.md')
+  })
+
+  it('バッククォート内の非 .md トークンは依存に含めない（#16）', async () => {
+    // コード片や不要な識別子を依存として拾わないこと
+    await writeFile(join(tmpDir, 'a.md'), [
+      '# A',
+      '`const x = 1` のように書く。',
+      '`internal/types.go` というファイル名も書ける。',
+      '`b.md` は参照する。',
+    ].join('\n'))
+    await writeFile(join(tmpDir, 'b.md'), '# B')
+
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'a.md'), join(tmpDir, 'b.md')],
+      project_name: 'Test',
+    })
+
+    const aDeps = result.dependency_graph['a.md']
+    expect(aDeps).toContain('b.md')
+    // .go や .ts や const 等は依存に含まれない
+    expect(aDeps).not.toContain('const x = 1')
+    expect(aDeps).not.toContain('internal/types.go')
+    expect(aDeps).not.toContain('types')
+  })
+
+  it('Markdown リンク記法はバッククォート修正後も従来通り動く（#16 リグレッション防止）', async () => {
+    await writeFile(join(tmpDir, 'a.md'), '# A\n参照: [概要](overview.md) と `inline.md` を併用。')
+    await writeFile(join(tmpDir, 'overview.md'), '# 概要')
+    await writeFile(join(tmpDir, 'inline.md'), '# Inline')
+
+    const result = await analyzeDesign({
+      doc_paths: [join(tmpDir, 'a.md'), join(tmpDir, 'overview.md'), join(tmpDir, 'inline.md')],
+      project_name: 'Test',
+    })
+
+    const aDeps = result.dependency_graph['a.md']
+    expect(aDeps).toContain('overview.md')
+    expect(aDeps).toContain('inline.md')
+  })
+
   it('フロントマターの layer を優先する（Hybrid C）', async () => {
     // ファイル名は "todo" を含むが、フロントマターで foundation 指定
     await writeFile(join(tmpDir, 'todo-list.md'), [

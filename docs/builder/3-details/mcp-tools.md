@@ -55,7 +55,7 @@ Builder が提供する 8 つの MCP ツールの入出力・処理フローを�
 1. **ドリフト検出（既存実装がある場合）** — `project_dir` 内にリファレンス（`docs/ref/*.md`）があれば、リファレンス生成日時以降の git コミット履歴を取得し、変更ファイルとリファレンスの機能範囲を照合。乖離があれば `drift_warnings` として警告（処理は止めない）
 2. 各文書を読み取り、メタデータを抽出（行数、セクション構成）
 3. Planner が付与したフロントマター（`status`, `layer`, `decisions`, `open_questions`）があれば優先使用。なければ本文から推定
-4. Markdown リンクやセクション参照から文書間の依存グラフを構築
+4. Markdown リンクやセクション参照から文書間の依存グラフを構築（後述「文書間参照の検出記法」参照）
 5. `decisions.jsonl` があれば、決定事項と影響文書の関係を依存グラフに反映
 6. 各文書をレイヤーに分類
 7. 技術選定に関する記述を設計文書から抽出（→ recipe.json の `tech_stack` に反映）
@@ -121,6 +121,21 @@ Builder が提供する 8 つの MCP ツールの入出力・処理フローを�
 ```
 
 `coding_standards` が `null` の場合、Builder は `tech_stack` の言語慣例にフォールバックする。
+
+**文書間参照の検出記法:**
+
+`dependency_graph` の構築では、本文中の以下 4 つの記法を文書間参照として拾う:
+
+| 記法 | 例 | 用途 |
+|---|---|---|
+| Markdown 標準リンク | `[概要](overview.md)` | 通常の参照 |
+| Wiki-link（Obsidian 形式） | `[[overview]]` / `[[overview#section]]` | Obsidian 環境 |
+| バッククォート記法 | `` `overview.md` `` / `` `3-details/api-spec.md` `` | 文書マップ・テーブル等での慣用記法 |
+| Frontmatter `decisions` | `decisions: [DEC-001]` | decisions.jsonl 経由の暗黙依存 |
+
+バッククォート記法は `*.md` で終わる場合のみ対象。`internal/types.go` 等の非 .md ファイル名は依存に含まれない。インラインコード（`` `const x = 1` `` 等）も .md で終わらないため自然に無視される。
+
+これら記法のいずれも検出されず、文書数が 3 件以上ある場合、`split_chunks` は `review_notes` に診断ヒントを追加する（参照記法の見直しを促す）。
 
 ### 3.2 `split_chunks`
 

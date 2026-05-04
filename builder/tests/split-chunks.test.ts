@@ -254,6 +254,77 @@ describe('splitChunks', () => {
     expect(chunk.validation_context).toContain('usecases.md')
   })
 
+  it('文書間参照が 1 件もなければ診断ヒントを review_notes に追加する（#16）', async () => {
+    // 3 文書あるのに dependency_graph が空 = 参照記法が拾えていない可能性
+    const analysis = makeAnalysis({
+      documents: [
+        makeDoc('a.md', 'foundation', 1000),
+        makeDoc('b.md', 'specification', 1000),
+        makeDoc('c.md', 'interface', 1000),
+      ],
+      layers: {
+        foundation: ['a.md'],
+        specification: ['b.md'],
+        usecase: [],
+        interface: ['c.md'],
+        execution: [],
+        context: [],
+      },
+      dependency_graph: { 'a.md': [], 'b.md': [], 'c.md': [] },
+    })
+
+    const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+    expect(result.review_notes.some(n => n.includes('文書間参照'))).toBe(true)
+    expect(result.review_notes.some(n => n.includes('バッククォート') || n.includes('frontmatter'))).toBe(true)
+  })
+
+  it('文書数が 2 以下なら診断ヒントは出さない（#16）', async () => {
+    // 小規模プロジェクトでは依存ゼロが正常な場合もある
+    const analysis = makeAnalysis({
+      documents: [
+        makeDoc('a.md', 'foundation', 1000),
+        makeDoc('b.md', 'specification', 1000),
+      ],
+      layers: {
+        foundation: ['a.md'],
+        specification: ['b.md'],
+        usecase: [],
+        interface: [],
+        execution: [],
+        context: [],
+      },
+      dependency_graph: { 'a.md': [], 'b.md': [] },
+    })
+
+    const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+    expect(result.review_notes.some(n => n.includes('文書間参照'))).toBe(false)
+  })
+
+  it('依存が 1 件でもあれば診断ヒントは出さない（#16）', async () => {
+    const analysis = makeAnalysis({
+      documents: [
+        makeDoc('a.md', 'foundation', 1000, { to: ['b.md'] }),
+        makeDoc('b.md', 'specification', 1000, { by: ['a.md'] }),
+        makeDoc('c.md', 'interface', 1000),
+      ],
+      layers: {
+        foundation: ['a.md'],
+        specification: ['b.md'],
+        usecase: [],
+        interface: ['c.md'],
+        execution: [],
+        context: [],
+      },
+      dependency_graph: { 'a.md': ['b.md'], 'b.md': [], 'c.md': [] },
+    })
+
+    const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+    expect(result.review_notes.some(n => n.includes('文書間参照'))).toBe(false)
+  })
+
   it('実装対象がない場合、空のチャンクと要レビューを返す', async () => {
     const analysis = makeAnalysis({
       documents: [

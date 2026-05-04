@@ -93,13 +93,24 @@ function extractSectionNames(content: string): string[] {
  * 文書内のリンクを抽出する。
  * - Wiki-link: [[name]] / [[name#section]] (Obsidian 形式)
  * - Markdown 標準リンク: [text](path/to/doc.md) / [text](doc.md#section)
+ * - バッククォート記法: `*.md` / `path/to/*.md`（文書マップやテーブルで多用される）
  *
  * いずれもベース名（拡張子・パス除去）を返す。
- * インラインコード（`...`）内は対象外。
  */
 function extractWikiLinks(content: string): string[] {
   const links = new Set<string>()
-  // インラインコード内は除外
+
+  // バッククォート内の *.md 参照を先に拾う（次の cleaned で消える前に取り出す）。
+  // ファイル名相当（空白・バッククォートを含まない）のみ対象。`const x = 1` 等は .md で
+  // 終わらないので無視され、`internal/types.go` 等の非 .md ファイル名も対象外。
+  for (const match of content.matchAll(/`([^`\s]+\.md)`/g)) {
+    const url = match[1]
+    if (/^(https?|mailto):/i.test(url)) continue
+    const baseName = url.split(/[/\\]/).pop()?.replace(/\.md$/, '')
+    if (baseName) links.add(baseName)
+  }
+
+  // 以降は wiki-link / markdown-link の抽出。インラインコード内は対象外。
   const cleaned = content.replace(/`[^`]*`/g, '')
 
   // Obsidian 形式 [[name]] / [[name#section]]
