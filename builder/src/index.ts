@@ -18,13 +18,28 @@ const server = new McpServer({
   version: '0.1.0',
 })
 
+// 一部の MCP クライアントは配列・オブジェクト引数を JSON 文字列でシリアライズして送ってくる。
+// 文字列を受けたら JSON.parse してから zod に渡す共通の前処理を用意する。
+const parseJsonIfString = (val: unknown): unknown => {
+  if (typeof val !== 'string') return val
+  try {
+    return JSON.parse(val)
+  } catch {
+    return val
+  }
+}
+
+const arrayOfStrings = z.preprocess(parseJsonIfString, z.array(z.string()))
+const jsonAny = z.preprocess(parseJsonIfString, z.any())
+const wrapObject = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(parseJsonIfString, schema)
+
 // --- レシピエンジン ---
 
 server.tool(
   'analyze_design',
   '設計文書群を構造分析する。レイヤー分類、依存グラフ構築、トークン推定、ドリフト検出を行う',
   {
-    doc_paths: z.array(z.string()).describe('設計文書のファイルパス一覧'),
+    doc_paths: arrayOfStrings.describe('設計文書のファイルパス一覧'),
     project_name: z.string().describe('プロジェクト名'),
     project_dir: z.string().optional().describe('プロジェクトディレクトリ（ドリフト検出用、省略可）'),
   },
@@ -38,15 +53,15 @@ server.tool(
   'split_chunks',
   '設計分析結果をもとにチャンクに分割する。レイヤー間の依存関係と実行順序を算出する',
   {
-    analysis: z.any().describe('analyze_design の出力結果'),
+    analysis: jsonAny.describe('analyze_design の出力結果'),
     docs_dir: z.string().describe('設計文書のベースディレクトリ'),
     strategy: z.enum(['bottom_up']).optional().describe('分割戦略（現状は bottom_up のみ）'),
-    constraints: z.object({
+    constraints: wrapObject(z.object({
       max_input_tokens: z.number().optional(),
       max_output_tokens: z.number().optional(),
       max_source_docs: z.number().optional(),
       max_output_files: z.number().optional(),
-    }).optional().describe('分割制約'),
+    }).optional()).describe('分割制約'),
   },
   async ({ analysis, docs_dir, strategy, constraints }) => {
     const result = await splitChunks({ analysis, docs_dir, strategy, constraints })
@@ -58,7 +73,7 @@ server.tool(
   'validate_refs',
   '設計文書間の参照整合性をチェックする。リンク切れ、用語の揺れ、ID欠番を検出する',
   {
-    doc_paths: z.array(z.string()).describe('検証対象の設計文書パス一覧'),
+    doc_paths: arrayOfStrings.describe('検証対象の設計文書パス一覧'),
   },
   async ({ doc_paths }) => {
     const result = await validateRefs(doc_paths)
@@ -71,9 +86,9 @@ server.tool(
   'チャンク群をレシピファイル（recipe.json）として出力する。設計文書の内容を埋め込む',
   {
     project: z.string().describe('プロジェクト名'),
-    tech_stack: z.any().describe('技術スタック情報'),
-    coding_standards: z.any().optional().describe('analyze_design の coding_standards フィールド（省略可）'),
-    chunks: z.any().describe('split_chunks の出力チャンク群'),
+    tech_stack: jsonAny.describe('技術スタック情報'),
+    coding_standards: jsonAny.optional().describe('analyze_design の coding_standards フィールド（省略可）'),
+    chunks: jsonAny.describe('split_chunks の出力チャンク群'),
     docs_dir: z.string().describe('設計文書のベースディレクトリ'),
     output_path: z.string().describe('レシピファイルの出力パス'),
     include_source_content: z.boolean().optional().describe('設計文書の内容を埋め込むか（デフォルト: true）'),
@@ -117,7 +132,7 @@ server.tool(
   {
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
     chunk_id: z.string().describe('完了したチャンクのID'),
-    generated_files: z.array(z.string()).describe('生成されたファイルパスの一覧'),
+    generated_files: arrayOfStrings.describe('生成されたファイルパスの一覧'),
   },
   async ({ execution_state_path, chunk_id, generated_files }) => {
     const result = await completeChunk(execution_state_path, chunk_id, generated_files)
@@ -189,7 +204,7 @@ server.tool(
   {
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
     chunk_id: z.string().describe('対象チャンク ID'),
-    test_files: z.array(z.string()).describe('Test Agent が生成したテストファイルのパス一覧'),
+    test_files: arrayOfStrings.describe('Test Agent が生成したテストファイルのパス一覧'),
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
   },
   async ({ execution_state_path, chunk_id, test_files, model }) => {
@@ -206,19 +221,19 @@ server.tool(
   {
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
     chunk_id: z.string().describe('対象チャンク ID'),
-    divergence_report: z.object({
+    divergence_report: wrapObject(z.object({
       items: z.array(z.object({
         severity: z.enum(['critical', 'update_needed', 'minor']),
         category: z.string(),
         description: z.string(),
       })),
-    }).describe('ラウンドトリップ照合の乖離レポート'),
-    artifacts: z.object({
+    })).describe('ラウンドトリップ照合の乖離レポート'),
+    artifacts: wrapObject(z.object({
       design_doc: z.string(),
       implementation: z.array(z.string()),
       tests: z.array(z.string()),
       reference: z.string(),
-    }).describe('照合に使ったアーティファクト'),
+    })).describe('照合に使ったアーティファクト'),
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
   },
   async ({ execution_state_path, chunk_id, divergence_report, artifacts, model }) => {
@@ -235,13 +250,13 @@ server.tool(
   {
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
     chunk_id: z.string().describe('対象チャンク ID'),
-    divergence_report: z.object({
+    divergence_report: wrapObject(z.object({
       items: z.array(z.object({
         severity: z.enum(['critical', 'update_needed', 'minor']),
         category: z.string(),
         description: z.string(),
       })),
-    }).describe('オーケストレーターが照合した結果の DivergenceReport'),
+    })).describe('オーケストレーターが照合した結果の DivergenceReport'),
   },
   async ({ execution_state_path, chunk_id, divergence_report }) => {
     const result = await recordVerificationResult(execution_state_path, chunk_id, divergence_report)
