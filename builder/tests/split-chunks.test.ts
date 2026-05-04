@@ -630,6 +630,49 @@ describe('splitChunks', () => {
       expect(integrationChunk.implementation_prompt_template).toContain('統合テスト')
       expect(integrationChunk.expected_outputs).toHaveLength(0)
     })
+
+    it('統合テストチャンクは reference_doc を持たない（#18）', async () => {
+      const analysis = makeAnalysis({
+        documents: [
+          makeDoc('a.md', 'foundation', 2000),
+          makeDoc('b.md', 'specification', 2000),
+        ],
+        layers: {
+          foundation: ['a.md'],
+          specification: ['b.md'],
+          usecase: [],
+          interface: [],
+          execution: [],
+          context: [],
+        },
+      })
+
+      const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+      const integrationChunk = result.chunks.find(c => c.is_integration_test)!
+      expect(integrationChunk.reference_doc).toBeUndefined()
+    })
+
+    it('通常チャンクの reference_doc は docs/4-ref/ 配下になる（#18）', async () => {
+      const analysis = makeAnalysis({
+        documents: [
+          makeDoc('a.md', 'foundation', 2000),
+        ],
+        layers: {
+          foundation: ['a.md'],
+          specification: [],
+          usecase: [],
+          interface: [],
+          execution: [],
+          context: [],
+        },
+      })
+
+      const result = await splitChunks({ analysis, docs_dir: '/tmp' })
+
+      const realChunk = result.chunks.find(c => !c.is_integration_test)!
+      expect(realChunk.reference_doc).toMatch(/^docs\/4-ref\//)
+    })
   })
 
   // --- tier ベースのチャンク化（design-doc-standard.md §2 / §5）---

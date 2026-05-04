@@ -47,7 +47,7 @@ function createTestChunk(overrides: Partial<PreparedChunk> = {}): PreparedChunk 
       boundary_tests: ['入力が空のとき例外を返す'],
       integration_refs: [],
     },
-    reference_doc: 'docs/ref/chunk-01-test.md',
+    reference_doc: 'docs/4-ref/chunk-01-test.md',
     working_dir: '/tmp/test-project',
     is_integration_test: false,
     ...overrides,
@@ -143,7 +143,17 @@ describe('buildImplAgentPrompt', () => {
   it('reference_doc パスが含まれる（リファレンス生成指示）', () => {
     const chunk = createTestChunk()
     const prompt = buildImplAgentPrompt(chunk, '')
-    expect(prompt).toContain('docs/ref/chunk-01-test.md')
+    expect(prompt).toContain('docs/4-ref/chunk-01-test.md')
+  })
+
+  it('reference_doc が undefined のときリファレンス生成指示を出さない（#18 統合テスト）', () => {
+    const chunk = createTestChunk({ reference_doc: undefined })
+    const prompt = buildImplAgentPrompt(chunk, '')
+
+    expect(prompt).not.toContain('リファレンス生成指示')
+    expect(prompt).not.toContain('リファレンス（日本語文書）を生成します')
+    // 作業手順にもリファレンスステップを含めない
+    expect(prompt).not.toContain('4. リファレンスを生成する')
   })
 })
 

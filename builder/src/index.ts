@@ -246,7 +246,7 @@ server.tool(
 
 server.tool(
   'record_verification_result',
-  'ラウンドトリップ照合の結果を docs/ref/verification-{chunk_id}.md として記録する。判定（OK / 要更新 / NG）も返す',
+  'ラウンドトリップ照合の結果を docs/4-ref/verification-{chunk_id}.md として記録する。判定（OK / 要更新 / NG）も返す',
   {
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
     chunk_id: z.string().describe('対象チャンク ID'),

@@ -100,7 +100,7 @@ Test Agent の出力: テストファイル群
 
 ### 4.4 照合結果の出力（Step4）
 
-照合結果を **標準出力**（人への即時報告）と **ファイル**（`docs/ref/verification-{chunk_id}.md`）の両方に出力する。記録フォーマットの詳細は [ラウンドトリップ検証 §6](roundtrip-verification.md) を参照。
+照合結果を **標準出力**（人への即時報告）と **ファイル**（`docs/4-ref/verification-{chunk_id}.md`）の両方に出力する。記録フォーマットの詳細は [ラウンドトリップ検証 §6](roundtrip-verification.md) を参照。
 
 ### 4.5 Investigation Agent による原因仕分け（Step5: 照合 NG 時のみ）
 

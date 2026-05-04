@@ -411,8 +411,8 @@ describe('detectDrift', () => {
 
     // 1秒待ってリファレンス作成（mtime がコミット後になるように）
     await new Promise(r => setTimeout(r, 1100))
-    await mkdir(join(gitDir, 'docs', 'ref'), { recursive: true })
-    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference')
+    await mkdir(join(gitDir, 'docs', '4-ref'), { recursive: true })
+    await writeFile(join(gitDir, 'docs', '4-ref', 'chunk-01-ref.md'), '# Reference')
     await git('add', '.')
     await git('commit', '-m', 'add reference')
 
@@ -422,9 +422,9 @@ describe('detectDrift', () => {
 
   it('リファレンス後にコード変更があれば警告を返す', async () => {
     // 初期コミット + リファレンス
-    await mkdir(join(gitDir, 'docs', 'ref'), { recursive: true })
+    await mkdir(join(gitDir, 'docs', '4-ref'), { recursive: true })
     await writeFile(join(gitDir, 'src.ts'), 'const x = 1')
-    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference')
+    await writeFile(join(gitDir, 'docs', '4-ref', 'chunk-01-ref.md'), '# Reference')
     await git('add', '.')
     await git('commit', '-m', 'initial with reference')
 
@@ -442,27 +442,27 @@ describe('detectDrift', () => {
     expect(warnings[0].message).toContain('リファレンス生成後')
   })
 
-  it('docs/ref/ 内の変更は検出対象から除外する', async () => {
-    await mkdir(join(gitDir, 'docs', 'ref'), { recursive: true })
-    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference v1')
+  it('docs/4-ref/ 内の変更は検出対象から除外する', async () => {
+    await mkdir(join(gitDir, 'docs', '4-ref'), { recursive: true })
+    await writeFile(join(gitDir, 'docs', '4-ref', 'chunk-01-ref.md'), '# Reference v1')
     await git('add', '.')
     await git('commit', '-m', 'initial')
 
     await new Promise(r => setTimeout(r, 1100))
     // リファレンス自身だけを変更
-    await writeFile(join(gitDir, 'docs', 'ref', 'chunk-01-ref.md'), '# Reference v2')
+    await writeFile(join(gitDir, 'docs', '4-ref', 'chunk-01-ref.md'), '# Reference v2')
     await git('add', '.')
     await git('commit', '-m', 'update reference only')
 
     const warnings = await detectDrift(gitDir)
-    // docs/ref/ の変更はフィルタされるので、changed_files が空 → 警告なし
+    // docs/4-ref/ の変更はフィルタされるので、changed_files が空 → 警告なし
     expect(warnings).toEqual([])
   })
 
   it('git リポジトリでなければ空配列を返す', async () => {
     const nonGitDir = await mkdtemp(join(tmpdir(), 'no-git-'))
-    await mkdir(join(nonGitDir, 'docs', 'ref'), { recursive: true })
-    await writeFile(join(nonGitDir, 'docs', 'ref', 'ref.md'), '# Ref')
+    await mkdir(join(nonGitDir, 'docs', '4-ref'), { recursive: true })
+    await writeFile(join(nonGitDir, 'docs', '4-ref', 'ref.md'), '# Ref')
 
     const warnings = await detectDrift(nonGitDir)
     expect(warnings).toEqual([])

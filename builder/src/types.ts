@@ -59,7 +59,11 @@ export interface Chunk {
   expected_outputs: string[]
   completion_criteria: string[]
   test_requirements: TestRequirements
-  reference_doc: string // リファレンスドキュメントの出力先パス
+  /**
+   * リファレンスドキュメントの出力先パス。
+   * 統合テストチャンクは新規実装を持たないため undefined（Issue #18）。
+   */
+  reference_doc?: string
   validation_context?: string
   estimated_input_tokens: number
   estimated_output_tokens: number
@@ -85,7 +89,11 @@ export interface DraftChunk {
   expected_outputs: string[]
   completion_criteria: string[]
   test_requirements: TestRequirements
-  reference_doc: string // リファレンスドキュメントの出力先パス
+  /**
+   * リファレンスドキュメントの出力先パス。
+   * 統合テストチャンクは新規実装を持たないため undefined（Issue #18）。
+   */
+  reference_doc?: string
   validation_context?: string
   estimated_input_tokens: number
   estimated_output_tokens: number
@@ -230,7 +238,11 @@ export interface PreparedChunk {
   expected_outputs: string[]
   completion_criteria: string[]
   test_requirements: TestRequirements
-  reference_doc: string // リファレンスドキュメントの出力先パス
+  /**
+   * リファレンスドキュメントの出力先パス。undefined のときは生成しない
+   * （統合テストチャンクは新規実装を持たないため undefined）。
+   */
+  reference_doc?: string
   working_dir: string
   coding_standards_digest?: string // next_chunks がプロンプトに付加済み
 }

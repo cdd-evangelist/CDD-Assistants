@@ -52,7 +52,7 @@ Builder が提供する 8 つの MCP ツールの入出力・処理フローを�
 `project_dir` を指定すると、ディレクトリ内の `decisions.jsonl` も自動で読み込む。
 
 **処理ステップ:**
-1. **ドリフト検出（既存実装がある場合）** — `project_dir` 内にリファレンス（`docs/ref/*.md`）があれば、リファレンス生成日時以降の git コミット履歴を取得し、変更ファイルとリファレンスの機能範囲を照合。乖離があれば `drift_warnings` として警告（処理は止めない）
+1. **ドリフト検出（既存実装がある場合）** — `project_dir` 内にリファレンス（`docs/4-ref/*.md`）があれば、リファレンス生成日時以降の git コミット履歴を取得し、変更ファイルとリファレンスの機能範囲を照合。乖離があれば `drift_warnings` として警告（処理は止めない）
 2. 各文書を読み取り、メタデータを抽出（行数、セクション構成）
 3. Planner が付与したフロントマター（`status`, `layer`, `decisions`, `open_questions`）があれば優先使用。なければ本文から推定
 4. Markdown リンクやセクション参照から文書間の依存グラフを構築（後述「文書間参照の検出記法」参照）
@@ -71,7 +71,7 @@ Builder が提供する 8 つの MCP ツールの入出力・処理フローを�
 {
   "drift_warnings": [
     {
-      "reference": "docs/ref/chunk-01-db-schema.md",
+      "reference": "docs/4-ref/chunk-01-db-schema.md",
       "commits_since": 3,
       "changed_files": ["src/db/schema.sql", "src/db/connection.ts"],
       "message": "リファレンス生成後にデータ層のコードが変更されています。設計文書が最新の実装を反映しているか、Planner で確認してください"
@@ -211,7 +211,7 @@ Step 3: 各レイヤー内でチャンクに分割
         "integration_refs": []
       },
       "implementation_prompt_template": "以下の設計に基づき、データベーススキーマ を実装してください。\n\n{source_content}",
-      "reference_doc": "docs/ref/chunk-01-データベーススキーマ.md",
+      "reference_doc": "docs/4-ref/chunk-01-データベーススキーマ.md",
       "depends_on": [],
       "estimated_input_tokens": 2500,
       "estimated_output_tokens": 3750,
@@ -345,7 +345,7 @@ Chunk（recipe.json の最終形）
       "expected_outputs": ["..."],
       "completion_criteria": ["..."],
       "test_requirements": { "interface_tests": [], "boundary_tests": [], "integration_refs": [] },
-      "reference_doc": "docs/ref/chunk-01-db-schema.md",
+      "reference_doc": "docs/4-ref/chunk-01-db-schema.md",
       "validation_context": "UC-1: 初期セットアップで ghost.db が作成される"
     }
   ],

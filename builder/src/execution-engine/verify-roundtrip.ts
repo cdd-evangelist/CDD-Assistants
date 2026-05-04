@@ -86,7 +86,8 @@ function severityToLabel(s: 'critical' | 'update_needed' | 'minor'): string {
 }
 
 /**
- * 検証結果を docs/ref/verification-{chunk_id}.md として記録する。
+ * 検証結果を docs/4-ref/verification-{chunk_id}.md として記録する
+ * （設計文書標準 §5.1: 4-ref/ はリファレンス・検証結果・補足資料）。
  */
 export async function recordVerificationResult(
   executionStatePath: string,
@@ -108,14 +109,14 @@ export async function recordVerificationResult(
   const verificationPath = join(
     state.working_dir,
     'docs',
-    'ref',
+    '4-ref',
     `verification-${chunkId}.md`,
   )
 
   const md = formatVerificationReport({
     chunkName: chunk.name,
     sourceDocPaths: chunk.source_docs.map(d => d.path),
-    referenceDocPath: chunk.reference_doc,
+    referenceDocPath: chunk.reference_doc ?? '(統合テストチャンクのため reference doc なし)',
     timestamp: new Date().toISOString(),
     divergence,
   })

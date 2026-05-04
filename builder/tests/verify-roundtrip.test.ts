@@ -33,7 +33,7 @@ function createTestRecipe(): Recipe {
         expected_outputs: ['src/schema.sql'],
         completion_criteria: ['テーブル作成'],
         test_requirements: { interface_tests: [], boundary_tests: [], integration_refs: [] },
-        reference_doc: 'docs/ref/chunk-01-db-schema.md',
+        reference_doc: 'docs/4-ref/chunk-01-db-schema.md',
         estimated_input_tokens: 500,
         estimated_output_tokens: 300,
         is_integration_test: false,
@@ -105,7 +105,7 @@ describe('formatVerificationReport', () => {
     const md = formatVerificationReport({
       chunkName: 'DB スキーマ',
       sourceDocPaths: ['BasicDesign.md'],
-      referenceDocPath: 'docs/ref/chunk-01.md',
+      referenceDocPath: 'docs/4-ref/chunk-01.md',
       timestamp: '2026-04-23T01:00:00Z',
       divergence: report,
     })
@@ -113,7 +113,7 @@ describe('formatVerificationReport', () => {
     expect(md).toContain('# ラウンドトリップ検証結果: DB スキーマ')
     expect(md).toContain('## 判定: NG')
     expect(md).toContain('BasicDesign.md')
-    expect(md).toContain('docs/ref/chunk-01.md')
+    expect(md).toContain('docs/4-ref/chunk-01.md')
     expect(md).toContain('機能の欠落')
     expect(md).toContain('X 関数がない')
     expect(md).toContain('命名の揺れ')
@@ -125,7 +125,7 @@ describe('formatVerificationReport', () => {
     const md = formatVerificationReport({
       chunkName: 'チャンク',
       sourceDocPaths: ['design.md'],
-      referenceDocPath: 'docs/ref/chunk-01.md',
+      referenceDocPath: 'docs/4-ref/chunk-01.md',
       timestamp: '2026-04-23T01:00:00Z',
       divergence: { items: [] },
     })
@@ -136,7 +136,7 @@ describe('formatVerificationReport', () => {
 })
 
 describe('recordVerificationResult', () => {
-  it('verification-{chunk_id}.md を docs/ref/ に書き出す', async () => {
+  it('verification-{chunk_id}.md を docs/4-ref/ に書き出す', async () => {
     const report: DivergenceReport = {
       items: [{ severity: 'minor', category: '命名の揺れ', description: 'foo vs bar' }],
     }
@@ -151,13 +151,13 @@ describe('recordVerificationResult', () => {
     expect(content).toContain('OK')
   })
 
-  it('working_dir 配下の docs/ref/ に出力する', async () => {
+  it('working_dir 配下の docs/4-ref/ に出力する', async () => {
     const report: DivergenceReport = { items: [] }
     const result = await recordVerificationResult(statePath, 'chunk-01', report)
 
     // load_recipe では working_dir が recipe と同じディレクトリ
     expect(result.verification_path).toContain(tmpDir)
-    expect(result.verification_path).toMatch(/docs[/\\]ref[/\\]verification-chunk-01\.md$/)
+    expect(result.verification_path).toMatch(/docs[/\\]4-ref[/\\]verification-chunk-01\.md$/)
   })
 
   it('存在しないチャンク ID ならエラー', async () => {

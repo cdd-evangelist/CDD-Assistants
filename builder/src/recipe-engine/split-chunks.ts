@@ -224,7 +224,7 @@ function createIntegrationChunk(
       boundary_tests: [],
       integration_refs: integrationRefs,
     },
-    reference_doc: `docs/ref/${id}-${name.replace(/[^a-zA-Z0-9　-鿿]/g, '-')}.md`,
+    // 統合テストチャンクは新規実装を持たないため reference_doc を設定しない（Issue #18）
     estimated_input_tokens: 1000,
     estimated_output_tokens: 1500,
     is_integration_test: true,
@@ -636,7 +636,7 @@ export async function splitChunks(input: SplitChunksInput): Promise<SplitChunksR
       completion_criteria: ['テストが通る'],
       test_requirements: testRequirements,
       is_integration_test: false,
-      reference_doc: `docs/ref/${id}-${candidate.name.replace(/[^a-zA-Z0-9\u3000-\u9fff]/g, '-')}.md`,
+      reference_doc: `docs/4-ref/${id}-${candidate.name.replace(/[^a-zA-Z0-9\u3000-\u9fff]/g, '-')}.md`,
       validation_context: validationContext,
       estimated_input_tokens: candidate.estimatedInputTokens,
       estimated_output_tokens: estOutputTokens,

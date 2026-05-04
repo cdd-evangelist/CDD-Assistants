@@ -35,7 +35,7 @@ layer: specification
 - **設計文書** — チャンクの `source_docs` に対応する Markdown
 - **リファレンス** — Impl Agent が実装後に生成する日本語文書
 - **コード規約資産** — `recipe.json` の `coding_standards` が指す AGENTS.md / linter 設定等（規約適合性の確認に使用）
-- **照合結果ファイル** — `docs/ref/verification-{chunk_id}.md`
+- **照合結果ファイル** — `docs/4-ref/verification-{chunk_id}.md`
 
 ### 2.2 エンティティ（扱うデータ）
 
@@ -84,7 +84,7 @@ Impl Agent が Green フェーズの最後、実装と同じセッションで�
   "id": "chunk-01",
   "name": "データベーススキーマ",
   "expected_outputs": ["src/db/schema.sql", "src/db/connection.ts", "tests/db/schema.test.ts"],
-  "reference_doc": "docs/ref/chunk-01-db-schema.md"
+  "reference_doc": "docs/4-ref/chunk-01-db-schema.md"
 }
 ```
 
@@ -105,13 +105,13 @@ Impl Agent が Green フェーズの最後、実装と同じセッションで�
 | 軽微 | 命名の揺れ | 設計と微妙に異なる変数名 | 警告のみ |
 | 軽微 | 説明の粒度 | リファレンスの方が詳細 | 通過 |
 
-**照合結果の出力:** `docs/ref/verification-{chunk_id}.md` に乖離一覧・判定・サマリーを記録する。記録フォーマットの詳細は §6 を参照。
+**照合結果の出力:** `docs/4-ref/verification-{chunk_id}.md` に乖離一覧・判定・サマリーを記録する。記録フォーマットの詳細は §6 を参照。
 
 ## 6. 検証結果の記録フォーマット
 
 照合結果は **標準出力**（人への即時報告）と **ファイル**（記録・追跡用）の両方に出力する。
 
-**出力先ファイル:** `docs/ref/verification-{chunk_id}.md`
+**出力先ファイル:** `docs/4-ref/verification-{chunk_id}.md`
 
 **出力フォーマット:**
 

@@ -271,9 +271,12 @@ async function loadDecisions(projectDir: string): Promise<Decision[]> {
 /**
  * 既存リファレンスとコミット履歴を照合し、設計文書と実装の乖離を検出する。
  * git リポジトリでない場合やリファレンスが存在しない場合は空配列を返す。
+ *
+ * リファレンスは設計文書標準 §5.1 の `docs/4-ref/` 配下に格納される
+ * （Issue #18 で `docs/ref/` から移行）。
  */
 export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
-  const refDir = join(projectDir, 'docs', 'ref')
+  const refDir = join(projectDir, 'docs', '4-ref')
   let refFiles: string[]
   try {
     refFiles = (await readdir(refDir)).filter(f => f.endsWith('.md'))
@@ -300,7 +303,7 @@ export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
       const changedFiles = [...new Set(
         stdout.split('\n')
           .map(l => l.trim())
-          .filter(l => l && !l.startsWith('docs/ref/'))
+          .filter(l => l && !l.startsWith('docs/4-ref/'))
       )]
 
       if (changedFiles.length > 0) {
@@ -312,7 +315,7 @@ export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
         const commitCount = logOut.trim().split('\n').filter(l => l.trim()).length
 
         warnings.push({
-          reference: join('docs', 'ref', refFile),
+          reference: join('docs', '4-ref', refFile),
           commits_since: commitCount,
           changed_files: changedFiles,
           message: `リファレンス生成後にコードが変更されています。設計文書が最新の実装を反映しているか、Planner で確認してください`,

@@ -123,13 +123,24 @@ export function buildTestAgentPrompt(chunk: PreparedChunk): string {
 /**
  * Impl Agent プロンプトを組み立てる（agent-prompts.md §4.3）。
  * テストコード + 設計文書をコンテキストに使い、実装とリファレンスを生成する。
+ *
+ * reference_doc が undefined のときはリファレンス生成指示を出さない
+ * （統合テストチャンクは新規実装を持たないため、Issue #18）。
  */
 export function buildImplAgentPrompt(chunk: PreparedChunk, testCode: string): string {
   const implFiles = chunk.expected_outputs.filter(f => !isTestFile(f))
+  const includeReference = chunk.reference_doc !== undefined
+
+  const introLine2 = includeReference
+    ? '実装完了後にリファレンス（日本語文書）を生成します。'
+    : ''
 
   const lines = [
-    'あなたは Impl Agent です。Test Agent が書いたテストを全て PASS させる実装を書き、',
-    '実装完了後にリファレンス（日本語文書）を生成します。',
+    'あなたは Impl Agent です。Test Agent が書いたテストを全て PASS させる実装を書きます。',
+  ]
+  if (introLine2) lines.push(introLine2)
+
+  lines.push(
     '',
     '## 担当するチャンク',
     `${chunk.id}: ${chunk.name}`,
@@ -145,34 +156,40 @@ export function buildImplAgentPrompt(chunk: PreparedChunk, testCode: string): st
     '',
     '## 完了条件',
     ...chunk.completion_criteria.map(c => `- ${c}`),
-  ]
+  )
 
   if (chunk.coding_standards_digest) {
     lines.push('', '## コード規約', chunk.coding_standards_digest)
   }
 
-  lines.push(
-    '',
-    '## 作業手順',
+  const steps = [
     '1. テストコードを読んで、何を実装すべきか把握する',
     '2. 実装を書く',
     '3. テストを実行して全 PASS を確認する',
-    '4. リファレンスを生成する（詳細は下記）',
-    '',
-    '## リファレンス生成指示',
-    '',
-    `実装完了後、${chunk.reference_doc} に以下を日本語で記述してください:`,
-    '',
-    '1. モジュール構成の概要（ファイル構成と各モジュールの役割）',
-    '2. 公開インターフェース（関数シグネチャ、入力型・出力型）',
-    '3. 実装ロジック（処理の流れ、使用アルゴリズム・ヒューリスティクス）',
-    '4. 型定義（主要な型とその関係）',
-    '',
-    '**重要な制約**:',
-    '- リファレンスは**実装したコードだけを見て書いてください**',
-    '- 設計文書やテストを参照しないでください',
-    '- 推測を含めないでください（「こうだろう」ではなく「こうなっている」で書く）',
-  )
+  ]
+  if (includeReference) {
+    steps.push('4. リファレンスを生成する（詳細は下記）')
+  }
+  lines.push('', '## 作業手順', ...steps)
+
+  if (includeReference) {
+    lines.push(
+      '',
+      '## リファレンス生成指示',
+      '',
+      `実装完了後、${chunk.reference_doc} に以下を日本語で記述してください:`,
+      '',
+      '1. モジュール構成の概要（ファイル構成と各モジュールの役割）',
+      '2. 公開インターフェース（関数シグネチャ、入力型・出力型）',
+      '3. 実装ロジック（処理の流れ、使用アルゴリズム・ヒューリスティクス）',
+      '4. 型定義（主要な型とその関係）',
+      '',
+      '**重要な制約**:',
+      '- リファレンスは**実装したコードだけを見て書いてください**',
+      '- 設計文書やテストを参照しないでください',
+      '- 推測を含めないでください（「こうだろう」ではなく「こうなっている」で書く）',
+    )
+  }
 
   return lines.join('\n')
 }

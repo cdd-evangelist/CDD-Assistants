@@ -166,9 +166,9 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 
 `project_dir` が指定されている場合、`detectDrift` を呼び出す。
 
-- `{project_dir}/docs/ref/` 内の `.md` ファイルを列挙する
+- `{project_dir}/docs/4-ref/` 内の `.md` ファイルを列挙する
 - 各リファレンスファイルの `mtime` を取得し、それ以降の git コミットで変更されたファイルを `git log --since {mtime} --name-only --diff-filter=ACMR` で取得する
-- `docs/ref/` 配下の変更は除外する
+- `docs/4-ref/` 配下の変更は除外する
 - 変更ファイルがあれば `git log --since {mtime} --oneline` でコミット数をカウントし、`DriftWarning` を生成する
 - git コマンドが失敗した場合やリファレンスディレクトリが存在しない場合は空配列を返す
 
@@ -253,7 +253,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 - `implementation_prompt_template` は `以下の設計に基づき、{name} を実装してください。\n\n{source_content}` の固定テンプレート
 - `expected_outputs` は空配列（機械的に決定困難のため）
 - `completion_criteria` は `['テストが通る']` 固定
-- `reference_doc` は `docs/ref/{id}-{name}.md` 形式。name 中の英数字・CJK 文字以外はハイフンに置換される
+- `reference_doc` は `docs/4-ref/{id}-{name}.md` 形式。name 中の英数字・CJK 文字以外はハイフンに置換される
 - 推定出力トークン数は入力トークン数の 1.5 倍で、`max_output_tokens` を上限とする
 - `source_docs` の件数が `max_source_docs` を超過した場合、および推定入力トークンが `max_input_tokens` を超過した場合は `review_notes` に記録される
 
