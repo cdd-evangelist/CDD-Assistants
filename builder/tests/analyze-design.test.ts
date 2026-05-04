@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { analyzeDesign } from '../src/recipe-engine/analyze-design.js'
-import { parseFrontmatter, detectDrift } from '../src/recipe-engine/analyze-design.js'
+import { parseFrontmatter, detectDrift, inferTier } from '../src/recipe-engine/analyze-design.js'
 
 const exec = promisify(execFile)
 
@@ -259,6 +259,44 @@ describe('analyzeDesign', () => {
     expect(result.coding_standards!.scripts.test).toBe('vitest run')
   })
 
+  it('複数コンポーネント構成の tier 振り分けが正しく行われる（§5.4）', async () => {
+    // docs/{component}/{tier}/file.md 形式の標準レイアウトを再現
+    await mkdir(join(tmpDir, 'planner', '3-details'), { recursive: true })
+    await mkdir(join(tmpDir, 'planner', '2-features'), { recursive: true })
+    await mkdir(join(tmpDir, 'builder', '3-details'), { recursive: true })
+    await mkdir(join(tmpDir, 'builder', '4-ref'), { recursive: true })
+    await writeFile(join(tmpDir, 'basic-design.md'), '# 基本設計')
+    await writeFile(join(tmpDir, 'planner', '3-details', 'mcp-tools.md'), '# Planner ツール')
+    await writeFile(join(tmpDir, 'planner', '2-features', 'wall-hitting.md'), '# 設計壁打ち')
+    await writeFile(join(tmpDir, 'builder', '3-details', 'recipe-engine.md'), '# Builder エンジン')
+    await writeFile(join(tmpDir, 'builder', '4-ref', 'api.md'), '# API リファレンス')
+
+    const result = await analyzeDesign({
+      doc_paths: [
+        join(tmpDir, 'basic-design.md'),
+        join(tmpDir, 'planner', '3-details', 'mcp-tools.md'),
+        join(tmpDir, 'planner', '2-features', 'wall-hitting.md'),
+        join(tmpDir, 'builder', '3-details', 'recipe-engine.md'),
+        join(tmpDir, 'builder', '4-ref', 'api.md'),
+      ],
+      project_name: 'CDD-Assistants',
+    })
+
+    const tierOf = (path: string) => result.documents.find(d => d.path === path)!.tier
+    expect(tierOf('basic-design.md')).toBe('basic')
+    expect(tierOf('planner/3-details/mcp-tools.md')).toBe('detail')
+    expect(tierOf('planner/2-features/wall-hitting.md')).toBe('feature')
+    expect(tierOf('builder/3-details/recipe-engine.md')).toBe('detail')
+    expect(tierOf('builder/4-ref/api.md')).toBe('reference')
+
+    // tiers サマリにも反映される
+    expect(result.tiers.detail).toContain('planner/3-details/mcp-tools.md')
+    expect(result.tiers.detail).toContain('builder/3-details/recipe-engine.md')
+    expect(result.tiers.feature).toContain('planner/2-features/wall-hitting.md')
+    expect(result.tiers.reference).toContain('builder/4-ref/api.md')
+    expect(result.tiers.basic).toContain('basic-design.md')
+  })
+
   it('規約ファイルが何もなければ coding_standards は null', async () => {
     await writeFile(join(tmpDir, 'design.md'), '# 設計')
     const result = await analyzeDesign({
@@ -360,5 +398,66 @@ describe('detectDrift', () => {
     expect(warnings).toEqual([])
 
     await rm(nonGitDir, { recursive: true, force: true })
+  })
+})
+
+// --- inferTier ---
+
+describe('inferTier', () => {
+  describe('単一構成（§5.1）', () => {
+    it('1-usecases/ 配下を usecase と判定する', () => {
+      expect(inferTier('1-usecases/login.md')).toBe('usecase')
+    })
+    it('2-features/ 配下を feature と判定する', () => {
+      expect(inferTier('2-features/auth.md')).toBe('feature')
+    })
+    it('3-details/ 配下を detail と判定する', () => {
+      expect(inferTier('3-details/db-schema.md')).toBe('detail')
+    })
+    it('4-ref/ 配下を reference と判定する', () => {
+      expect(inferTier('4-ref/api-spec.md')).toBe('reference')
+    })
+    it('ルート直下のファイルを basic と判定する', () => {
+      expect(inferTier('basic-design.md')).toBe('basic')
+    })
+  })
+
+  describe('複数コンポーネント構成（§5.4）', () => {
+    it('{component}/3-details/ を detail と判定する', () => {
+      expect(inferTier('planner/3-details/mcp-tools.md')).toBe('detail')
+    })
+    it('{component}/2-features/ を feature と判定する', () => {
+      expect(inferTier('planner/2-features/wall-hitting.md')).toBe('feature')
+    })
+    it('{component}/1-usecases/ を usecase と判定する', () => {
+      expect(inferTier('builder/1-usecases/build-flow.md')).toBe('usecase')
+    })
+    it('{component}/4-ref/ を reference と判定する', () => {
+      expect(inferTier('builder/4-ref/decisions.jsonl.md')).toBe('reference')
+    })
+    it('ネストが深いコンポーネント構成にも対応する', () => {
+      expect(inferTier('a/b/c/3-details/foo.md')).toBe('detail')
+    })
+  })
+
+  describe('Windows パスセパレータ', () => {
+    it('バックスラッシュ区切りでも判定できる', () => {
+      expect(inferTier('planner\\3-details\\mcp-tools.md')).toBe('detail')
+    })
+  })
+
+  describe('プレフィックス無しのフォールバック（rare）', () => {
+    it('details/ 配下を detail と判定する', () => {
+      expect(inferTier('details/foo.md')).toBe('detail')
+    })
+    it('{component}/details/ を detail と判定する', () => {
+      expect(inferTier('planner/details/foo.md')).toBe('detail')
+    })
+    it('features/ 配下を feature と判定する', () => {
+      expect(inferTier('features/foo.md')).toBe('feature')
+    })
+    it('usecases/ 配下を usecase と判定する', () => {
+      expect(inferTier('usecases/foo.md')).toBe('usecase')
+    })
   })
 })

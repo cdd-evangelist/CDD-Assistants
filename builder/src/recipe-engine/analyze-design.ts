@@ -327,20 +327,25 @@ export async function detectDrift(projectDir: string): Promise<DriftWarning[]> {
  * - 4-ref/      → reference
  * - それ以外（ルート直下）→ basic
  *
+ * 単一構成（§5.1: 1-usecases/ がパス先頭）と複数コンポーネント構成
+ * （§5.4: {component}/3-details/ 等、先頭に component セグメント）の
+ * 両方に対応する。`(^|/)` でセグメント境界にマッチさせる。
+ *
  * フラット構造（フォルダ階層なし）の docs は basic 扱いになる。
  * Builder のスコープは 3階層モデルに整理された設計文書群であり、
  * フラット構造は別アシスタント（Cleaner 等）の責務（basic-design.md §1.3）。
  */
 export function inferTier(relPath: string): DocTier {
   const normalized = relPath.replace(/\\/g, '/')
-  if (normalized.startsWith('1-usecases/')) return 'usecase'
-  if (normalized.startsWith('2-features/')) return 'feature'
-  if (normalized.startsWith('3-details/'))  return 'detail'
-  if (normalized.startsWith('4-ref/'))      return 'reference'
+  // 標準形式（数字プレフィックス付き）: §5.1 単一構成 / §5.4 複数コンポーネント構成
+  if (/(^|\/)1-usecases\//.test(normalized)) return 'usecase'
+  if (/(^|\/)2-features\//.test(normalized)) return 'feature'
+  if (/(^|\/)3-details\//.test(normalized))  return 'detail'
+  if (/(^|\/)4-ref\//.test(normalized))      return 'reference'
   // フォルダプレフィックスが揺れている場合のフォールバック（rare）
-  if (normalized.includes('/details/'))     return 'detail'
-  if (normalized.includes('/features/'))    return 'feature'
-  if (normalized.includes('/usecases/'))    return 'usecase'
+  if (/(^|\/)details\//.test(normalized))    return 'detail'
+  if (/(^|\/)features\//.test(normalized))   return 'feature'
+  if (/(^|\/)usecases\//.test(normalized))   return 'usecase'
   return 'basic'
 }
 
