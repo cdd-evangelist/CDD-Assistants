@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { spawn } from 'node:child_process'
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import type {
@@ -11,8 +10,6 @@ import type {
   Artifacts,
   InvestigationResult,
 } from '../types.js'
-
-const execFileAsync = promisify(execFile)
 
 interface ClaudeCodeConfig {
   model?: string
@@ -240,7 +237,20 @@ function buildInvestigationPrompt(
 
 // --- claude CLI 実行ユーティリティ ---
 
-async function runClaude(
+const MAX_BUFFER = 10 * 1024 * 1024
+
+/**
+ * claude CLI を起動してプロンプトを実行する。
+ *
+ * stdio について:
+ *   stdin を `'ignore'` にして即時に閉じる（`< /dev/null` 相当）。これがないと
+ *   claude CLI は親プロセスの stdin から入力が来るのを 3 秒待ち、警告を出してから
+ *   進める挙動になり、初回呼び出しで成果物が生成されない事象が起きる（Issue #17）。
+ *   プロンプトは -p 引数で渡しているので stdin 入力は不要。
+ *
+ *   stdout / stderr は capture 用に pipe で受ける。サイズ上限は MAX_BUFFER。
+ */
+export async function runClaude(
   prompt: string,
   workingDir: string,
   config: Required<ClaudeCodeConfig>,
@@ -255,17 +265,63 @@ async function runClaude(
     args.push('--allowedTools', tool)
   }
 
-  try {
-    const result = await execFileAsync('claude', args, {
+  return new Promise((resolve) => {
+    const child = spawn('claude', args, {
       cwd: workingDir,
-      timeout: config.timeout,
-      maxBuffer: 10 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
-    return { stdout: (result as { stdout: string }).stdout ?? '' }
-  } catch (err: unknown) {
-    const e = err as { stderr?: string; stdout?: string; message?: string }
-    return { stdout: '', error: e.stderr || e.message || '実行失敗' }
-  }
+
+    let stdout = ''
+    let stderr = ''
+    let timedOut = false
+    let bufferOverflow = false
+
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGTERM')
+    }, config.timeout)
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (bufferOverflow) return
+      if (stdout.length + chunk.length > MAX_BUFFER) {
+        bufferOverflow = true
+        child.kill('SIGTERM')
+        return
+      }
+      stdout += chunk.toString('utf-8')
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (bufferOverflow) return
+      if (stderr.length + chunk.length > MAX_BUFFER) {
+        bufferOverflow = true
+        child.kill('SIGTERM')
+        return
+      }
+      stderr += chunk.toString('utf-8')
+    })
+
+    child.on('error', (err: Error) => {
+      clearTimeout(timer)
+      resolve({ stdout: '', error: err.message })
+    })
+
+    child.on('close', (code: number | null) => {
+      clearTimeout(timer)
+      if (timedOut) {
+        resolve({ stdout: '', error: 'タイムアウト' })
+        return
+      }
+      if (bufferOverflow) {
+        resolve({ stdout: '', error: 'maxBuffer 超過' })
+        return
+      }
+      if (code === 0) {
+        resolve({ stdout })
+      } else {
+        resolve({ stdout: '', error: stderr || `claude exit code ${code}` })
+      }
+    })
+  })
 }
 
 // --- ClaudeCodeExecutor ---
