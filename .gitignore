@@ -8,3 +8,5 @@ dist/
 execution-state.json
 *-state.json
 recipe.json
+CDD-Assistants-TestQuality-Feedback.md
+.claude/settings.json
