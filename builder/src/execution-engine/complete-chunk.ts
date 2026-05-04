@@ -2,8 +2,9 @@ import { readFile, writeFile, access } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 import { execFile, exec } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { Recipe, ExecutionState, CompleteChunkResult } from '../types.js'
+import type { Recipe, ExecutionState, CompleteChunkResult, Chunk } from '../types.js'
 import { checkTestQuality } from './test-quality-checker.js'
+import { getCommitHint } from '../utils/git.js'
 
 const execFileAsync = promisify(execFile)
 const execAsync = promisify(exec)
@@ -191,6 +192,14 @@ export async function completeChunk(
     ? chunk.completion_criteria.map(c => `${c}: OK`)
     : undefined
 
+  // commit_hint: 成功時のみ。失敗チャンクは再試行サイクルなのでコミット候補にしない
+  const commit_hint = success
+    ? await getCommitHint(state.working_dir, {
+        reason: 'chunk_completed',
+        suggested_message: buildChunkCommitMessage(chunk),
+      })
+    : null
+
   return {
     chunk_id: chunkId,
     status: success ? 'done' : 'failed',
@@ -207,5 +216,15 @@ export async function completeChunk(
       test_quality_issues: testQualityIssues,
     },
     newly_unblocked: newlyUnblocked,
+    commit_hint,
   }
+}
+
+/**
+ * chunk から conventional commits 風の suggested_message を生成する。
+ * chunk.name は 60 文字で切り詰める。
+ */
+function buildChunkCommitMessage(chunk: Chunk): string {
+  const name = chunk.name.length > 60 ? `${chunk.name.slice(0, 57)}...` : chunk.name
+  return `feat(${chunk.id}): ${name}`
 }

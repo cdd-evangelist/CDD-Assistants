@@ -313,6 +313,19 @@ export interface CompleteChunkResult {
     test_quality_issues?: string[]    // 静的検証で検出されたテスト品質の問題
   }
   newly_unblocked: string[]
+  commit_hint: CommitHint | null
+}
+
+/**
+ * ツールが「ここはコミットの自然なタイミング」と判定したときに返すヒント。
+ * uncommitted_files > 0 の場合のみ返り、変更なし / 非 git プロジェクトでは null。
+ * ツールはコミットを実行しない。Claude 側でユーザーに確認してから git を呼ぶ運用。
+ */
+export interface CommitHint {
+  uncommitted_files: number
+  changed_paths: string[]                                // 最大 20 件（git status --porcelain ベース）
+  suggested_message: string
+  reason: 'decision_recorded' | 'readiness_passed' | 'chunk_completed'
 }
 
 export interface ExecutionStatusResult {

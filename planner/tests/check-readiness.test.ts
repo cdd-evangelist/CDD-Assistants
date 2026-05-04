@@ -281,4 +281,64 @@ describe('checkReadiness', () => {
       expect(result.blockers[0].type).toBe('missing_basic_design')
     })
   })
+
+  describe('commit_hint', () => {
+    async function git(...args: string[]) {
+      const { execFile } = await import('node:child_process')
+      const { promisify } = await import('node:util')
+      return promisify(execFile)('git', args, { cwd: tmpDir })
+    }
+
+    it('git リポジトリでなければ commit_hint は null', async () => {
+      const deps = makeDeps()
+      const result = await checkReadiness({ project_dir: tmpDir }, deps)
+      expect(result.commit_hint).toBeNull()
+    })
+
+    it('未コミット変更があれば readiness_passed の commit_hint を返す（ready=true）', async () => {
+      await git('init')
+      await git('config', 'user.email', 'test@test.com')
+      await git('config', 'user.name', 'Test')
+      await writeFile(join(tmpDir, 'init.md'), 'init')
+      await git('add', '.')
+      await git('commit', '-m', 'init')
+      await writeFile(join(tmpDir, 'design.md'), 'updated')
+
+      const deps = makeDeps({
+        documents: [
+          { path: 'a.md', status: 'complete', layer: 'foundation', estimated_tokens: 100, sections: [], decisions: [], open_questions: [], references_to: [], referenced_by: [] },
+        ],
+        overall_progress: { complete: 1, in_progress: 0, draft: 0, total: 1, readiness: 'ready' },
+      })
+
+      const result = await checkReadiness({ project_dir: tmpDir }, deps)
+      expect(result.ready).toBe(true)
+      expect(result.commit_hint).not.toBeNull()
+      expect(result.commit_hint!.reason).toBe('readiness_passed')
+      expect(result.commit_hint!.suggested_message).toContain('レディネス通過')
+    })
+
+    it('ready=false でも未コミット変更があれば commit_hint を返す（途中保存推奨）', async () => {
+      await git('init')
+      await git('config', 'user.email', 'test@test.com')
+      await git('config', 'user.name', 'Test')
+      await writeFile(join(tmpDir, 'init.md'), 'init')
+      await git('add', '.')
+      await git('commit', '-m', 'init')
+      await writeFile(join(tmpDir, 'wip.md'), 'wip')
+
+      const deps = makeDeps({
+        documents: [
+          { path: 'a.md', status: 'draft', layer: 'foundation', estimated_tokens: 100, sections: [], decisions: [], open_questions: [], references_to: [], referenced_by: [] },
+        ],
+        overall_progress: { complete: 0, in_progress: 0, draft: 1, total: 1, readiness: 'not_ready' },
+      })
+
+      const result = await checkReadiness({ project_dir: tmpDir }, deps)
+      expect(result.ready).toBe(false)
+      expect(result.commit_hint).not.toBeNull()
+      expect(result.commit_hint!.reason).toBe('readiness_passed')
+      expect(result.commit_hint!.suggested_message).toContain('整備中')
+    })
+  })
 })

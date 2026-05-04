@@ -3,8 +3,12 @@ import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { trackDecision } from '../src/tools/track-decision.js'
 import { resolveDecisionsPath } from '../src/utils/decisions.js'
+
+const exec = promisify(execFile)
 
 let tmpDir: string
 
@@ -142,6 +146,66 @@ describe('trackDecision', () => {
     })
 
     expect(existsSync(resolveDecisionsPath(tmpDir))).toBe(true)
+  })
+})
+
+describe('trackDecision の commit_hint', () => {
+  async function git(...args: string[]) {
+    return exec('git', args, { cwd: tmpDir })
+  }
+
+  it('git リポジトリでなければ commit_hint は null', async () => {
+    const result = await trackDecision({
+      project_dir: tmpDir,
+      decision: 'テスト決定',
+      rationale: '',
+      affects: [],
+    })
+    expect(result.commit_hint).toBeNull()
+  })
+
+  it('git リポジトリで決定を記録すると commit_hint が返る', async () => {
+    await git('init')
+    await git('config', 'user.email', 'test@test.com')
+    await git('config', 'user.name', 'Test')
+    await writeFile(join(tmpDir, 'README.md'), '# init')
+    await git('add', '.')
+    await git('commit', '-m', 'init')
+
+    const result = await trackDecision({
+      project_dir: tmpDir,
+      decision: 'SQLite を採用',
+      rationale: '軽量で組み込みに向くため',
+      affects: [],
+    })
+
+    expect(result.commit_hint).not.toBeNull()
+    expect(result.commit_hint!.reason).toBe('decision_recorded')
+    expect(result.commit_hint!.suggested_message).toContain('DEC-001')
+    expect(result.commit_hint!.suggested_message).toContain('SQLite を採用')
+    expect(result.commit_hint!.uncommitted_files).toBeGreaterThan(0)
+  })
+
+  it('長い決定本文は suggested_message で切り詰められる', async () => {
+    await git('init')
+    await git('config', 'user.email', 'test@test.com')
+    await git('config', 'user.name', 'Test')
+    await writeFile(join(tmpDir, 'README.md'), '# init')
+    await git('add', '.')
+    await git('commit', '-m', 'init')
+
+    const longDecision = 'a'.repeat(200)
+    const result = await trackDecision({
+      project_dir: tmpDir,
+      decision: longDecision,
+      rationale: '',
+      affects: [],
+    })
+
+    expect(result.commit_hint).not.toBeNull()
+    // "docs: DEC-001 " (14 文字程度) + 60 文字以下のサマリ
+    expect(result.commit_hint!.suggested_message.length).toBeLessThanOrEqual(80)
+    expect(result.commit_hint!.suggested_message).toContain('...')
   })
 })
 

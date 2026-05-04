@@ -42,6 +42,18 @@ export interface Issue {
   locations?: string[]           // "filename.md:line"
 }
 
+/**
+ * ツールが「ここはコミットの自然なタイミング」と判定したときに返すヒント。
+ * uncommitted_files > 0 の場合のみ返り、変更なし / 非 git プロジェクトでは null。
+ * ツールはコミットを実行しない。Claude 側でユーザーに確認してから git を呼ぶ運用。
+ */
+export interface CommitHint {
+  uncommitted_files: number
+  changed_paths: string[]                                // 最大 20 件（git status --porcelain ベース）
+  suggested_message: string
+  reason: 'decision_recorded' | 'readiness_passed' | 'chunk_completed'
+}
+
 // --- clarify_idea ---
 
 export interface ClarifyIdeaInput {
@@ -172,6 +184,7 @@ export interface TrackDecisionResult {
   decision_id: string
   recorded_at: string
   affected_documents_status: AffectedDocStatus[]
+  commit_hint: CommitHint | null
 }
 
 // --- check_consistency ---
@@ -221,6 +234,7 @@ export interface CheckReadinessResult {
   blockers: Blocker[]
   warnings: Warning[]
   handoff_summary: string
+  commit_hint: CommitHint | null
 }
 
 // --- ユーティリティ向け ---

@@ -12,6 +12,7 @@ import type {
 } from '../types.js'
 import { designContext } from './design-context.js'
 import { checkConsistency } from './check-consistency.js'
+import { getCommitHint } from '../utils/git.js'
 
 export interface FolderStructureValidation {
   blockers: Blocker[]
@@ -214,5 +215,13 @@ export async function checkReadiness(
     handoff_summary = `${total}文書中${complete}完了、ブロッカー${blockers.length}件を解消すれば Builder に渡せます`
   }
 
-  return { ready, blockers, warnings, handoff_summary }
+  // commit_hint: チェック実行は設計文書整備の節目。未コミット変更があればコミット推奨
+  const commit_hint = await getCommitHint(project_dir, {
+    reason: 'readiness_passed',
+    suggested_message: ready
+      ? 'docs: 設計レディネス通過、Builder ハンドオフ準備完了'
+      : 'docs: 設計文書を整備中（レディネス未通過）',
+  })
+
+  return { ready, blockers, warnings, handoff_summary, commit_hint }
 }

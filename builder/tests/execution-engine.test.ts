@@ -2,11 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { loadRecipe } from '../src/execution-engine/load-recipe.js'
 import { nextChunks } from '../src/execution-engine/next-chunks.js'
 import { completeChunk } from '../src/execution-engine/complete-chunk.js'
 import { executionStatus } from '../src/execution-engine/execution-status.js'
 import type { Recipe } from '../src/types.js'
+
+const exec = promisify(execFile)
 
 // テスト用のミニレシピ
 function createTestRecipe(overrides?: Partial<Recipe>): Recipe {
@@ -353,5 +357,60 @@ describe('execution_status', () => {
     expect(result.progress.blocked).toBe(0)
     expect(result.current_level).toBe(1)       // Lv.0 完了
     expect(result.estimated_remaining).toBe('2 chunks')
+  })
+})
+
+describe('complete_chunk の commit_hint', () => {
+  async function git(...args: string[]) {
+    return exec('git', args, { cwd: tmpDir })
+  }
+
+  it('git リポジトリでなければ commit_hint は null（成功時）', async () => {
+    await loadRecipe(recipePath)
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('done')
+    expect(result.commit_hint).toBeNull()
+  })
+
+  it('成功 + 未コミット変更があれば chunk_completed の commit_hint を返す', async () => {
+    await git('init')
+    await git('config', 'user.email', 'test@test.com')
+    await git('config', 'user.name', 'Test')
+    // recipe.json と state.json を初期コミット（後の chunk 成果物だけが未コミットになるように）
+    await git('add', '.')
+    await git('commit', '-m', 'init')
+
+    await loadRecipe(recipePath)
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+
+    const result = await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    expect(result.status).toBe('done')
+    expect(result.commit_hint).not.toBeNull()
+    expect(result.commit_hint!.reason).toBe('chunk_completed')
+    expect(result.commit_hint!.suggested_message).toContain('chunk-01')
+    expect(result.commit_hint!.suggested_message).toContain('DB スキーマ')
+    expect(result.commit_hint!.uncommitted_files).toBeGreaterThan(0)
+    expect(result.commit_hint!.changed_paths.some(p => p.includes('schema.sql'))).toBe(true)
+  })
+
+  it('失敗時は commit_hint を null にする（再試行サイクルなのでコミット候補にしない）', async () => {
+    await git('init')
+    await git('config', 'user.email', 'test@test.com')
+    await git('config', 'user.name', 'Test')
+    await git('add', '.')
+    await git('commit', '-m', 'init')
+
+    await loadRecipe(recipePath)
+    // 期待ファイルを作らずに完了申告 → failed
+    const result = await completeChunk(statePath, 'chunk-01', [])
+
+    expect(result.status).toBe('failed')
+    expect(result.commit_hint).toBeNull()
   })
 })

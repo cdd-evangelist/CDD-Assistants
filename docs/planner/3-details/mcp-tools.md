@@ -291,9 +291,17 @@ Planner が提供する 6 つの MCP ツールの入出力・処理フローを�
     { "path": "BasicDesign.md", "needs_update": true },
     { "path": "mcp-tools.md", "needs_update": true },
     { "path": "operation-flows.md", "needs_update": true }
-  ]
+  ],
+  "commit_hint": {
+    "uncommitted_files": 3,
+    "changed_paths": ["docs/4-ref/decisions.jsonl", "docs/BasicDesign.md", "docs/mcp-tools.md"],
+    "suggested_message": "docs: DEC-012 messages テーブルを廃止し、.jsonl を行番号ポインタで参照する",
+    "reason": "decision_recorded"
+  }
 }
 ```
+
+`commit_hint` は決定ログ追記時の自然なコミットポイントを通知する。詳細は §3.8。
 
 ### 3.5 `check_consistency`
 
@@ -396,9 +404,48 @@ Planner が提供する 6 つの MCP ツールの入出力・処理フローを�
     { "type": "missing_features_dir", "message": "推奨フォルダ 2-features/ が存在しない（component: builder）" },
     { "type": "consistency", "message": "用語の揺れが1件" }
   ],
-  "handoff_summary": "14文書中13完了、ブロッカー1件を解消すれば Builder に渡せる"
+  "handoff_summary": "14文書中13完了、ブロッカー1件を解消すれば Builder に渡せる",
+  "commit_hint": {
+    "uncommitted_files": 5,
+    "changed_paths": ["docs/planner/basic-design.md", "..."],
+    "suggested_message": "docs: 設計文書を整備中（レディネス未通過）",
+    "reason": "readiness_passed"
+  }
 }
 ```
+
+`commit_hint` はレディネスチェック実行時の commit 候補を通知する。`ready=true` のときは「ハンドオフ準備完了」、`ready=false` のときは「整備中」のメッセージ。詳細は §3.8。
+
+### 3.8 `commit_hint`（共通仕様）
+
+各ツールが「自然な commit ポイント」をエージェントに知らせるための共通フィールド。ツールはコミットそのものは行わず、判断材料を返すだけ。
+
+**出力スキーマ:**
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `uncommitted_files` | number | `git status --porcelain --untracked-files=all` で取得した変更行数 |
+| `changed_paths` | string[] | 変更ファイル一覧（最大 20 件、リネーム時は新パス） |
+| `suggested_message` | string | ツールが文脈から組み立てた提案メッセージ（叩き台） |
+| `reason` | string | 通知理由。`decision_recorded` / `readiness_passed` / `chunk_completed`（Builder） |
+
+**null になる条件:**
+
+- 対象ディレクトリが git リポジトリでない
+- `git` が未インストール / コマンド失敗 / タイムアウト（5 秒）
+- 未コミット変更が 0 件
+
+**ツールごとの発火条件:**
+
+| ツール | 発火条件 | reason |
+|---|---|---|
+| `track_decision` | 決定追記後（常に） | `decision_recorded` |
+| `check_readiness` | チェック完了後（常に） | `readiness_passed` |
+| `complete_chunk` (Builder) | チャンク `status === 'done'` のときのみ | `chunk_completed` |
+
+**エージェントの責務:**
+
+`commit_hint !== null` のとき、エージェントは次のアクションに進む前にユーザーへコミット可否を確認する（実装はコミットしない）。`suggested_message` はあくまで叩き台。詳細は `~/.claude/rules/commit-hint.md`。
 
 ## 4. データモデル
 

@@ -490,7 +490,13 @@ Dual-Agent TDD で共有バイアスを防いでも、テストの assert が弱
     "tests_passed": true,
     "criteria_met": ["5テーブルが作成される: OK", "マイグレーションが冪等: OK"]
   },
-  "newly_unblocked": ["chunk-02", "chunk-03", "chunk-09"]
+  "newly_unblocked": ["chunk-02", "chunk-03", "chunk-09"],
+  "commit_hint": {
+    "uncommitted_files": 4,
+    "changed_paths": ["src/db/schema.sql", "src/db/connection.ts", "tests/db/schema.test.ts", "..."],
+    "suggested_message": "feat(chunk-01): DB スキーマ",
+    "reason": "chunk_completed"
+  }
 }
 ```
 
@@ -505,11 +511,17 @@ Dual-Agent TDD で共有バイアスを防いでも、テストの assert が弱
     "tests_passed": false,
     "test_errors": ["..."]
   },
+  "newly_unblocked": [],
+  "commit_hint": null,
   "action": "retry"
 }
 ```
 
-失敗したチャンクは `failed` 状態に。再実行時は `next_chunks` が再度返す。
+失敗したチャンクは `failed` 状態に。再実行時は `next_chunks` が再度返す。失敗時は `commit_hint` を `null` にする（再試行サイクルなのでコミット候補にしない）。
+
+**commit_hint:**
+
+`status === 'done'` の場合のみ、未コミット変更の有無を `git status --porcelain --untracked-files=all` で取得し、コミット候補として返す。タイムアウト 5 秒、`changed_paths` は最大 20 件。エージェントは `commit_hint !== null` のとき、次のチャンクに進む前にユーザーへコミット可否を確認する（ツール自身はコミットしない）。詳細は Planner 側の共通仕様（`planner/3-details/mcp-tools.md` §3.8）を参照。
 
 ### 4.4 `execution_status`
 

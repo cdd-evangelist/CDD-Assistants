@@ -1,12 +1,23 @@
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { loadDecisions, generateDecisionId, appendDecision } from '../utils/decisions.js'
+import { getCommitHint } from '../utils/git.js'
 import type {
   TrackDecisionInput,
   TrackDecisionResult,
   AffectedDocStatus,
   Decision,
 } from '../types.js'
+
+/**
+ * 決定事項のテキストから suggested commit message を生成する。
+ * 1 行目のみ採用し、長すぎる場合は 60 文字で切り詰める。
+ */
+function buildSuggestedMessage(decisionId: string, decisionText: string): string {
+  const firstLine = decisionText.split('\n')[0].trim()
+  const summary = firstLine.length > 60 ? `${firstLine.slice(0, 57)}...` : firstLine
+  return `docs: ${decisionId} ${summary}`
+}
 
 /**
  * 決定事項を decisions.jsonl に記録し、影響文書のステータスを返す。
@@ -52,9 +63,16 @@ export async function trackDecision(input: TrackDecisionInput): Promise<TrackDec
     })
   }
 
+  // commit_hint: decisions.jsonl の更新は自然なコミットポイント
+  const commit_hint = await getCommitHint(project_dir, {
+    reason: 'decision_recorded',
+    suggested_message: buildSuggestedMessage(decision_id, decision),
+  })
+
   return {
     decision_id,
     recorded_at: created_at,
     affected_documents_status,
+    commit_hint,
   }
 }
