@@ -8,5 +8,10 @@ dist/
 execution-state.json
 *-state.json
 recipe.json
+
+# Local Claude Code config
+.claude/
+.mcp.json
+
+# Misc
 CDD-Assistants-TestQuality-Feedback.md
-.claude/settings.json
