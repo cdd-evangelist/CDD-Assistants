@@ -111,6 +111,7 @@ describe('next_chunks', () => {
     const result = await nextChunks(statePath)
 
     expect(result.ready).toHaveLength(1)
+    expect(result.total_ready).toBe(1)
     expect(result.ready[0].id).toBe('chunk-01')
     expect(result.ready[0].implementation_prompt).toContain('CREATE TABLE users')
     expect(result.blocked).toContain('chunk-02')
@@ -118,21 +119,34 @@ describe('next_chunks', () => {
     expect(result.progress).toBe('0/3 完了')
   })
 
-  it('chunk-01 完了後に chunk-02, chunk-03 がアンロックされる', async () => {
+  it('chunk-01 完了後: デフォルト(limit=1)では 1 件のみ返し total_ready=2 になる', async () => {
     await loadRecipe(recipePath)
 
-    // chunk-01 のファイルを作成して完了させる
     await mkdir(join(tmpDir, 'src'), { recursive: true })
     await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users (id INTEGER PRIMARY KEY);')
     await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
 
     const result = await nextChunks(statePath)
 
-    expect(result.ready).toHaveLength(2)
-    const readyIds = result.ready.map(c => c.id).sort()
-    expect(readyIds).toEqual(['chunk-02', 'chunk-03'])
+    expect(result.ready).toHaveLength(1)
+    expect(result.total_ready).toBe(2)
     expect(result.done).toContain('chunk-01')
     expect(result.progress).toBe('1/3 完了')
+  })
+
+  it('chunk-01 完了後: limit=2 を指定すると chunk-02, chunk-03 が両方返る', async () => {
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users (id INTEGER PRIMARY KEY);')
+    await completeChunk(statePath, 'chunk-01', ['src/schema.sql'])
+
+    const result = await nextChunks(statePath, 2)
+
+    expect(result.ready).toHaveLength(2)
+    expect(result.total_ready).toBe(2)
+    const readyIds = result.ready.map(c => c.id).sort()
+    expect(readyIds).toEqual(['chunk-02', 'chunk-03'])
   })
 
   it('プレースホルダが解決される', async () => {

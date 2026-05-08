@@ -307,6 +307,8 @@ export interface LoadRecipeResult {
 
 export interface NextChunksResult {
   ready: PreparedChunk[]
+  /** 実際に ready なチャンクの総数（ready.length <= total_ready）。limit 指定時の残件数確認に使う */
+  total_ready: number
   blocked: string[]
   done: string[]
   failed: string[]

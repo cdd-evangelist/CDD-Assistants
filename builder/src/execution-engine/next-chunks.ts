@@ -82,8 +82,14 @@ async function resolvePlaceholders(content: string, workingDir: string): Promise
 /**
  * 依存が解決済みのチャンクを返す。
  * プレースホルダを実際のコードに差し込み済みの実装指示を組み立てる。
+ *
+ * @param limit 返す PreparedChunk の上限数（デフォルト: 1）。
+ *   ready チャンクが複数あっても先頭 limit 件だけ組み立てる。
+ *   total_ready で実際の ready 数を確認できる。
+ *   実装指示には設計文書全文が埋め込まれるため、複数返すとレスポンスが
+ *   コンテキスト上限を超える場合がある（Issue #25）。
  */
-export async function nextChunks(executionStatePath: string): Promise<NextChunksResult> {
+export async function nextChunks(executionStatePath: string, limit = 1): Promise<NextChunksResult> {
   const absStatePath = resolve(executionStatePath)
   const stateRaw = await readFile(absStatePath, 'utf-8')
   const state: ExecutionState = JSON.parse(stateRaw)
@@ -128,8 +134,10 @@ export async function nextChunks(executionStatePath: string): Promise<NextChunks
   const digest = generateCodingStandardsDigest(recipe.coding_standards, recipe.tech_stack)
 
   // ready チャンクのプレースホルダを解決して PreparedChunk を作成
+  // 先頭 limit 件のみ組み立てる（設計文書全文埋め込みによるレスポンス肥大化を防ぐ）
+  const limitedIds = readyIds.slice(0, limit)
   const ready: PreparedChunk[] = []
-  for (const id of readyIds) {
+  for (const id of limitedIds) {
     const chunk = chunkMap.get(id)
     if (!chunk) continue
 
@@ -164,6 +172,7 @@ export async function nextChunks(executionStatePath: string): Promise<NextChunks
   const total = recipe.chunks.length
   return {
     ready,
+    total_ready: readyIds.length,
     blocked,
     done,
     failed,

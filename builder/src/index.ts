@@ -116,12 +116,13 @@ server.tool(
 
 server.tool(
   'next_chunks',
-  '依存が解決済みのチャンクを返す。プレースホルダ解決済みの実装指示を含む',
+  '依存が解決済みのチャンクを返す。プレースホルダ解決済みの実装指示を含む。デフォルトで 1 件のみ返す（設計文書全文埋め込みによるレスポンス肥大化防止）。total_ready で実際の ready 数を確認できる',
   {
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
+    limit: z.number().optional().describe('返すチャンク数の上限（デフォルト: 1）'),
   },
-  async ({ execution_state_path }) => {
-    const result = await nextChunks(execution_state_path)
+  async ({ execution_state_path, limit }) => {
+    const result = await nextChunks(execution_state_path, limit)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
   }
 )

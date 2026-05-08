@@ -69,9 +69,10 @@ describe('AI-Ghost-Shell サンプルレシピ フロー', () => {
     expect(complete1.status).toBe('done')
     expect(complete1.newly_unblocked.sort()).toEqual(['chunk-02', 'chunk-03'])
 
-    // --- chunk-02 & chunk-03: 並列で実行可能 ---
-    const step2 = await nextChunks(statePath)
+    // --- chunk-02 & chunk-03: 並列で実行可能（limit=2 で両方取得）---
+    const step2 = await nextChunks(statePath, 2)
     expect(step2.ready).toHaveLength(2)
+    expect(step2.total_ready).toBe(2)
     const readyIds = step2.ready.map(c => c.id).sort()
     expect(readyIds).toEqual(['chunk-02', 'chunk-03'])
     expect(step2.progress).toBe('1/3 完了')
