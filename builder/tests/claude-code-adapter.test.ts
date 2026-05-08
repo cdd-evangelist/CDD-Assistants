@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { ClaudeCodeExecutor, buildTestAgentPrompt, buildImplAgentPrompt } from '../src/adapters/claude-code.js'
 import type { PreparedChunk } from '../src/types.js'
+import { readdir, stat } from 'node:fs/promises'
 
 // 偽 ChildProcess を組み立てるヘルパー: stdout に dataBytes を流し、close(0) で終了
 function makeFakeChild(stdoutData: string = '') {
@@ -220,5 +221,83 @@ describe('runClaude の stdio 制御（#17）', () => {
     const result = await executor.generateTests(createTestChunk())
     expect(result.success).toBe(false)
     expect(result.error).toContain('something failed')
+  })
+})
+
+// エラー終了する spawn を組み立てるヘルパー
+function makeErrorChild(stderrMessage: string) {
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: (s?: string) => boolean }
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  child.kill = () => true
+  queueMicrotask(() => {
+    child.stderr.emit('data', Buffer.from(stderrMessage, 'utf-8'))
+    child.emit('close', 1)
+  })
+  return child
+}
+
+describe('エラー時の部分生成検出', () => {
+  it('generateTests: エラーでも部分生成されたテストファイルを partial: true で返す', async () => {
+    spawnMock.mockImplementation(() => makeErrorChild('claude exit code 1'))
+
+    // before: 空, after: テストファイルが1件出現
+    vi.mocked(readdir)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ name: 'auth.test.ts', isDirectory: () => false }] as any)
+    vi.mocked(stat).mockResolvedValueOnce({ mtimeMs: 1000 } as any)
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.generateTests(createTestChunk())
+
+    expect(result.success).toBe(false)
+    expect(result.partial).toBe(true)
+    expect(result.test_files).toHaveLength(1)
+    expect(result.test_files[0]).toBe('auth.test.ts')
+    expect(result.error).toBeDefined()
+  })
+
+  it('generateTests: エラーかつファイルも生成されなかった場合 partial は undefined', async () => {
+    spawnMock.mockImplementation(() => makeErrorChild('タイムアウト'))
+    // readdir はデフォルトモック（常に空）のまま
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.generateTests(createTestChunk())
+
+    expect(result.success).toBe(false)
+    expect(result.partial).toBeUndefined()
+    expect(result.test_files).toHaveLength(0)
+    expect(result.error).toBeDefined()
+  })
+
+  it('implement: エラーでも部分生成されたファイルを partial: true で返す', async () => {
+    spawnMock.mockImplementation(() => makeErrorChild('claude exit code 1'))
+
+    // before: 空, after: 実装ファイルが1件出現
+    vi.mocked(readdir)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ name: 'auth.ts', isDirectory: () => false }] as any)
+    vi.mocked(stat).mockResolvedValueOnce({ mtimeMs: 1000 } as any)
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.implement(createTestChunk(), [])
+
+    expect(result.success).toBe(false)
+    expect(result.partial).toBe(true)
+    expect(result.generated_files).toHaveLength(1)
+    expect(result.generated_files[0]).toBe('auth.ts')
+    expect(result.error).toBeDefined()
+  })
+
+  it('implement: エラーかつファイルも生成されなかった場合 partial は undefined', async () => {
+    spawnMock.mockImplementation(() => makeErrorChild('タイムアウト'))
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.implement(createTestChunk(), [])
+
+    expect(result.success).toBe(false)
+    expect(result.partial).toBeUndefined()
+    expect(result.generated_files).toHaveLength(0)
+    expect(result.error).toBeDefined()
   })
 })

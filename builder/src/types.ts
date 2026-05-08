@@ -249,6 +249,8 @@ export interface PreparedChunk {
 
 export interface ExecutionResult {
   success: boolean
+  /** タイムアウト等のエラーでも部分生成があった場合 true。generated_files に生成済みファイルを含む */
+  partial?: boolean
   generated_files: string[]
   reference_doc?: string // 生成されたリファレンスのパス
   error?: string
@@ -256,6 +258,8 @@ export interface ExecutionResult {
 
 export interface TestGenerationResult {
   success: boolean
+  /** タイムアウト等のエラーでも部分生成があった場合 true。test_files に生成済みファイルを含む */
+  partial?: boolean
   test_files: string[]  // 生成されたテストファイルパス
   error?: string
 }

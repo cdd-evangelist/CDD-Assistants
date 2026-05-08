@@ -18,7 +18,7 @@ interface ClaudeCodeConfig {
 }
 
 const DEFAULT_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']
-const DEFAULT_TIMEOUT = 5 * 60 * 1000  // 5分
+const DEFAULT_TIMEOUT = 10 * 60 * 1000  // 10分
 const DEFAULT_MODEL   = 'sonnet'
 
 // --- ファイル差分検出 ---
@@ -359,12 +359,14 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
     const before = await listFiles(chunk.working_dir)
 
     const { error } = await runClaude(prompt, chunk.working_dir, this.config)
-    if (error) return { success: false, test_files: [], error }
 
     const after = await listFiles(chunk.working_dir)
     const generated = detectGeneratedFiles(before, after)
     const testFiles = generated.filter(isTestFile)
 
+    if (error) {
+      return { success: false, partial: testFiles.length > 0 || undefined, test_files: testFiles, error }
+    }
     return { success: true, test_files: testFiles }
   }
 
@@ -385,12 +387,14 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
     const before = await listFiles(chunk.working_dir)
 
     const { error } = await runClaude(prompt, chunk.working_dir, this.config)
-    if (error) return { success: false, generated_files: [], error }
 
     const after = await listFiles(chunk.working_dir)
     const generated = detectGeneratedFiles(before, after)
     const referenceDoc = generated.find(f => f === chunk.reference_doc)
 
+    if (error) {
+      return { success: false, partial: generated.length > 0 || undefined, generated_files: generated, reference_doc: referenceDoc, error }
+    }
     return { success: true, generated_files: generated, reference_doc: referenceDoc }
   }
 
