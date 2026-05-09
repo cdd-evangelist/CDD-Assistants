@@ -220,6 +220,7 @@ export interface ChunkState {
   outputs: string[] // 実際に生成されたファイルパス
   retry_count: number
   error?: string
+  last_error?: string // リカバリー検出用: 直前の失敗エラー。成功後もクリアしない
 }
 
 export interface ExecutionState {
@@ -287,7 +288,7 @@ export interface InvestigationResult {
 
 export interface ChunkExecutor {
   /** テスト生成（Red フェーズ）。設計文書と test_requirements のみをコンテキストに使う */
-  generateTests(chunk: PreparedChunk): Promise<TestGenerationResult>
+  generateTests(chunk: PreparedChunk, framework?: string): Promise<TestGenerationResult>
 
   /** 実装 + リファレンス生成（Green フェーズ）。テストコード + 設計文書をコンテキストに使う */
   implement(chunk: PreparedChunk, testFiles: string[]): Promise<ExecutionResult>

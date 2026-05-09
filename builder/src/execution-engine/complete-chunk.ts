@@ -5,6 +5,8 @@ import { promisify } from 'node:util'
 import type { Recipe, ExecutionState, CompleteChunkResult, Chunk } from '../types.js'
 import { checkTestQuality } from './test-quality-checker.js'
 import { getCommitHint } from '../utils/git.js'
+import { matchErrorToTemplate, instantiateRule } from '../test-rules/rule-extractor.js'
+import { appendRule } from '../test-rules/rule-store.js'
 
 const execFileAsync = promisify(execFile)
 const execAsync = promisify(exec)
@@ -167,9 +169,23 @@ export async function completeChunk(
     if (lintErrors?.length) errorParts.push(`Lint failed: ${lintErrors.join('\n')}`)
     if (formatErrors?.length) errorParts.push(`Format failed: ${formatErrors.join('\n')}`)
     chunkState.error = errorParts.join('\n') || 'Unknown error'
+    chunkState.last_error = chunkState.error
   }
 
-  // 7. 後続チャンクのアンロック確認
+  // 7. リカバリー検出: retry_count > 0 かつ last_error があれば失敗→成功のリカバリーとみなす
+  if (success && chunkState.retry_count > 0 && chunkState.last_error) {
+    const framework = recipe.tech_stack?.test
+    if (framework) {
+      const template = matchErrorToTemplate(chunkState.last_error, framework)
+      if (template) {
+        const rule = instantiateRule(template, chunkState.last_error)
+        await appendRule(rule, template.scope, state.working_dir)
+      }
+    }
+    chunkState.last_error = undefined
+  }
+
+  // 8. 後続チャンクのアンロック確認
   const newlyUnblocked: string[] = []
   if (success) {
     for (const c of recipe.chunks) {

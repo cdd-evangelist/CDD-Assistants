@@ -75,9 +75,9 @@ describe('ClaudeCodeExecutor', () => {
 })
 
 describe('buildTestAgentPrompt', () => {
-  it('Test Agent プロンプトにチャンク情報が含まれる', () => {
+  it('Test Agent プロンプトにチャンク情報が含まれる', async () => {
     const chunk = createTestChunk({ name: 'DB スキーマ' })
-    const prompt = buildTestAgentPrompt(chunk)
+    const prompt = await buildTestAgentPrompt(chunk)
 
     expect(prompt).toContain('Test Agent')
     expect(prompt).toContain('chunk-01')
@@ -85,28 +85,28 @@ describe('buildTestAgentPrompt', () => {
     expect(prompt).toContain('テスト用のファイルを作成してください') // implementation_prompt = source_content
   })
 
-  it('test_requirements の観点がプロンプトに含まれる', () => {
+  it('test_requirements の観点がプロンプトに含まれる', async () => {
     const chunk = createTestChunk()
-    const prompt = buildTestAgentPrompt(chunk)
+    const prompt = await buildTestAgentPrompt(chunk)
 
     expect(prompt).toContain('公開 API が期待通りに動作する')
     expect(prompt).toContain('入力が空のとき例外を返す')
   })
 
-  it('テストファイルのみが「生成すべきファイル」に含まれる', () => {
+  it('テストファイルのみが「生成すべきファイル」に含まれる', async () => {
     const chunk = createTestChunk({
       expected_outputs: ['src/db.ts', 'tests/db.test.ts', 'test/schema.spec.ts'],
     })
-    const prompt = buildTestAgentPrompt(chunk)
+    const prompt = await buildTestAgentPrompt(chunk)
 
     expect(prompt).toContain('tests/db.test.ts')
     expect(prompt).toContain('test/schema.spec.ts')
     expect(prompt).not.toContain('src/db.ts') // 非テストファイルは除外
   })
 
-  it('全テスト FAIL 指示が含まれる（Red フェーズ）', () => {
+  it('全テスト FAIL 指示が含まれる（Red フェーズ）', async () => {
     const chunk = createTestChunk()
-    const prompt = buildTestAgentPrompt(chunk)
+    const prompt = await buildTestAgentPrompt(chunk)
     expect(prompt).toContain('FAIL')
   })
 })

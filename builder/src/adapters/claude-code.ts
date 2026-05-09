@@ -10,6 +10,7 @@ import type {
   Artifacts,
   InvestigationResult,
 } from '../types.js'
+import { loadRules } from '../test-rules/rule-store.js'
 
 interface ClaudeCodeConfig {
   model?: string
@@ -79,8 +80,13 @@ function isTestFile(path: string): boolean {
 /**
  * Test Agent プロンプトを組み立てる（agent-prompts.md §3.3）。
  * 設計文書と test_requirements のみをコンテキストに使い、実装コードを渡さない。
+ * framework と projectDir が渡された場合は蓄積済みのルールをプロンプト末尾に注入する。
  */
-export function buildTestAgentPrompt(chunk: PreparedChunk): string {
+export async function buildTestAgentPrompt(
+  chunk: PreparedChunk,
+  framework?: string,
+  projectDir?: string,
+): Promise<string> {
   const testFiles = chunk.expected_outputs.filter(isTestFile)
   const req = chunk.test_requirements
 
@@ -94,7 +100,7 @@ export function buildTestAgentPrompt(chunk: PreparedChunk): string {
     ? req.integration_refs.map(t => `  - ${t}`).join('\n')
     : '  （なし）'
 
-  return [
+  const lines = [
     'あなたは Test Agent です。設計文書とテスト要件から逆算してテストコードを書きます。',
     '実装コードは一切見ていません。これは意図的な分離で、共有バイアスを排除するためです。',
     '',
@@ -117,7 +123,21 @@ export function buildTestAgentPrompt(chunk: PreparedChunk): string {
     '2. 実装はまだ存在しないので、インポートパスは expected_outputs から推測してください',
     '3. 全テストが FAIL する状態で提出してください（Red フェーズ）',
     '4. `assert True` のような空テストは書かないでください — 設計要件を必ず検証してください',
-  ].join('\n')
+  ]
+
+  if (framework && projectDir) {
+    const rules = await loadRules(framework, projectDir)
+    if (rules.length > 0) {
+      lines.push('', `## テストフレームワーク固有ルール (${framework})`)
+      for (const rule of rules) {
+        lines.push(`- ${rule.rule}`)
+        if (rule.example_before) lines.push(`  Bad:  ${rule.example_before}`)
+        if (rule.example_after)  lines.push(`  Good: ${rule.example_after}`)
+      }
+    }
+  }
+
+  return lines.join('\n')
 }
 
 /**
@@ -354,8 +374,8 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
     }
   }
 
-  async generateTests(chunk: PreparedChunk): Promise<TestGenerationResult> {
-    const prompt = buildTestAgentPrompt(chunk)
+  async generateTests(chunk: PreparedChunk, framework?: string): Promise<TestGenerationResult> {
+    const prompt = await buildTestAgentPrompt(chunk, framework, chunk.working_dir)
     const before = await listFiles(chunk.working_dir)
 
     const { error } = await runClaude(prompt, chunk.working_dir, this.config)

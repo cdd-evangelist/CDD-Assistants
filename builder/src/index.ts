@@ -171,15 +171,18 @@ async function loadPreparedChunk(executionStatePath: string, chunkId: string) {
   const digest = generateCodingStandardsDigest(recipe.coding_standards, recipe.tech_stack)
 
   return {
-    id: chunk.id,
-    name: chunk.name,
-    implementation_prompt: chunk.implementation_prompt,
-    expected_outputs: chunk.expected_outputs,
-    completion_criteria: chunk.completion_criteria,
-    test_requirements: chunk.test_requirements,
-    reference_doc: chunk.reference_doc,
-    working_dir: state.working_dir,
-    coding_standards_digest: chunk.is_integration_test ? undefined : digest,
+    chunk: {
+      id: chunk.id,
+      name: chunk.name,
+      implementation_prompt: chunk.implementation_prompt,
+      expected_outputs: chunk.expected_outputs,
+      completion_criteria: chunk.completion_criteria,
+      test_requirements: chunk.test_requirements,
+      reference_doc: chunk.reference_doc,
+      working_dir: state.working_dir,
+      coding_standards_digest: chunk.is_integration_test ? undefined : digest,
+    },
+    framework: recipe.tech_stack?.test,
   }
 }
 
@@ -192,9 +195,9 @@ server.tool(
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
   },
   async ({ execution_state_path, chunk_id, model }) => {
-    const chunk = await loadPreparedChunk(execution_state_path, chunk_id)
+    const { chunk, framework } = await loadPreparedChunk(execution_state_path, chunk_id)
     const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet' })
-    const result = await executor.generateTests(chunk as any)
+    const result = await executor.generateTests(chunk as any, framework)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
   }
 )
@@ -209,7 +212,7 @@ server.tool(
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
   },
   async ({ execution_state_path, chunk_id, test_files, model }) => {
-    const chunk = await loadPreparedChunk(execution_state_path, chunk_id)
+    const { chunk } = await loadPreparedChunk(execution_state_path, chunk_id)
     const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet' })
     const result = await executor.implement(chunk as any, test_files)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
@@ -238,7 +241,7 @@ server.tool(
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
   },
   async ({ execution_state_path, chunk_id, divergence_report, artifacts, model }) => {
-    const chunk = await loadPreparedChunk(execution_state_path, chunk_id)
+    const { chunk } = await loadPreparedChunk(execution_state_path, chunk_id)
     const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet' })
     const result = await executor.investigate(chunk as any, divergence_report, artifacts)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
