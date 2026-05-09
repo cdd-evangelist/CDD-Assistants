@@ -1,0 +1,274 @@
+{
+  "project": "CDD-Assistants / test-rules",
+  "created_at": "2026-05-09T02:33:07.427Z",
+  "builder_version": "0.1.0",
+  "tech_stack": {
+    "language": "TypeScript",
+    "runtime": "Node.js",
+    "test": "vitest"
+  },
+  "coding_standards": null,
+  "chunks": [
+    {
+      "id": "chunk-01",
+      "name": "型定義と初期テンプレート",
+      "description": "RuleTemplate / StoredRule 型と初期テンプレート2件 (mock-cjs-default, mock-hoisting) を定義する",
+      "depends_on": [],
+      "source_docs": [
+        {
+          "path": "2-features/test-rules.md",
+          "sections": [
+            "2.2 エンティティ（扱うデータ）",
+            "3. 初期テンプレート",
+            "7. 設計判断"
+          ],
+          "include": "partial"
+        }
+      ],
+      "source_content": "### 2.2 エンティティ（扱うデータ）\n\n**RuleTemplate（テンプレート定義）**\n\n```typescript\ninterface RuleTemplate {\n  id: string              // 'mock-cjs-default' 等\n  framework: string       // 'vitest' | 'jest' | 'pytest' | ...\n  scope: 'global' | 'project'\n  error_pattern: string   // テスト失敗出力に対する regex\n  description: string     // テンプレートの説明\n  rule_template: string   // {{package}} 等のプレースホルダあり\n  example_before?: string\n  example_after?: string\n}\n```\n\n**StoredRule（蓄積済みルール）**\n\n```typescript\ninterface StoredRule {\n  id: string              // uuid\n  template_id: string     // どのテンプレートから生成されたか\n  framework: string\n  rule: string            // プレースホルダ解決済みのルール文\n  example_before?: string\n  example_after?: string\n  created_at: string      // ISO 8601\n}\n```\n\n## 3. 初期テンプレート\n\n`src/test-rules/templates.ts` に同梱し、インストール直後から有効。\n\n| id | framework | error_pattern（概要） | scope |\n|---|---|---|---|\n| `mock-cjs-default` | vitest | `No \"default\" export is defined on the .* mock` | global |\n| `mock-hoisting` | vitest | `hoisting` / `vi.mock.*outside` 系 | global |\n\nテンプレートの追加は手動運用（LLM がテンプレート自体を自動生成しない）。未知パターンはリカバリー検出でマッチせずスキップされ、初回失敗として許容される。\n\n## 7. 設計判断\n\n### なぜテンプレートを「LLM が発明しない」構造にするか\n\nテンプレートマッチングは regex であり、LLM が新テンプレートを自動生成しない。これにより:\n- 誤ったルールが蓄積されない（誤検出より見逃しを選ぶ）\n- 未知パターンは初回失敗→人が気づく→テンプレート追加という明確なフローになる\n\n### なぜ error_pattern マッチ（regex）にするか\n\nリカバリー内容（テストファイルの diff）から LLM でパターンを蒸留する案と比較して:\n- 実装コストが低い\n- テスト失敗出力は構造化されていることが多く、regex で十分な精度が出る\n- LLM 呼び出しを増やさない（コスト・レイテンシ）\n\n### なぜグローバルとプロジェクトの 2 層にするか\n\nフレームワークレベルのルール（CJS mock パターン等）はプロジェクトをまたいで再利用できる。一方「このプロジェクトは vi.setup.ts でこういう初期化をしている」はプロジェクト固有。スコープをテンプレートが持つことで、蒸留時に LLM が判断しなくてよい。",
+      "implementation_prompt": "以下の設計に基づき、RuleTemplate と StoredRule の型定義と初期テンプレートを実装してください。\n\n### 2.2 エンティティ（扱うデータ）\n\n**RuleTemplate（テンプレート定義）**\n\n```typescript\ninterface RuleTemplate {\n  id: string              // 'mock-cjs-default' 等\n  framework: string       // 'vitest' | 'jest' | 'pytest' | ...\n  scope: 'global' | 'project'\n  error_pattern: string   // テスト失敗出力に対する regex\n  description: string     // テンプレートの説明\n  rule_template: string   // {{package}} 等のプレースホルダあり\n  example_before?: string\n  example_after?: string\n}\n```\n\n**StoredRule（蓄積済みルール）**\n\n```typescript\ninterface StoredRule {\n  id: string              // uuid\n  template_id: string     // どのテンプレートから生成されたか\n  framework: string\n  rule: string            // プレースホルダ解決済みのルール文\n  example_before?: string\n  example_after?: string\n  created_at: string      // ISO 8601\n}\n```\n\n## 3. 初期テンプレート\n\n`src/test-rules/templates.ts` に同梱し、インストール直後から有効。\n\n| id | framework | error_pattern（概要） | scope |\n|---|---|---|---|\n| `mock-cjs-default` | vitest | `No \"default\" export is defined on the .* mock` | global |\n| `mock-hoisting` | vitest | `hoisting` / `vi.mock.*outside` 系 | global |\n\nテンプレートの追加は手動運用（LLM がテンプレート自体を自動生成しない）。未知パターンはリカバリー検出でマッチせずスキップされ、初回失敗として許容される。\n\n## 7. 設計判断\n\n### なぜテンプレートを「LLM が発明しない」構造にするか\n\nテンプレートマッチングは regex であり、LLM が新テンプレートを自動生成しない。これにより:\n- 誤ったルールが蓄積されない（誤検出より見逃しを選ぶ）\n- 未知パターンは初回失敗→人が気づく→テンプレート追加という明確なフローになる\n\n### なぜ error_pattern マッチ（regex）にするか\n\nリカバリー内容（テストファイルの diff）から LLM でパターンを蒸留する案と比較して:\n- 実装コストが低い\n- テスト失敗出力は構造化されていることが多く、regex で十分な精度が出る\n- LLM 呼び出しを増やさない（コスト・レイテンシ）\n\n### なぜグローバルとプロジェクトの 2 層にするか\n\nフレームワークレベルのルール（CJS mock パターン等）はプロジェクトをまたいで再利用できる。一方「このプロジェクトは vi.setup.ts でこういう初期化をしている」はプロジェクト固有。スコープをテンプレートが持つことで、蒸留時に LLM が判断しなくてよい。\n\n## 実装方針\n- `builder/src/test-rules/templates.ts` に RuleTemplate インターフェース、StoredRule インターフェース、BUILTIN_TEMPLATES 配列を定義する\n- 初期テンプレートは mock-cjs-default（error_pattern: vitest の No \"default\" export エラー）と mock-hoisting（hoisting エラー）の2件\n- テストは実装と同時に `builder/tests/test-rules/templates.test.ts` に書く",
+      "expected_outputs": [
+        "builder/src/test-rules/templates.ts",
+        "builder/tests/test-rules/templates.test.ts"
+      ],
+      "completion_criteria": [
+        "RuleTemplate / StoredRule 型がエクスポートされている",
+        "BUILTIN_TEMPLATES に mock-cjs-default と mock-hoisting の2件が含まれる",
+        "各テンプレートに id / framework / scope / error_pattern / description / rule_template が設定されている",
+        "テストが通る"
+      ],
+      "test_requirements": {
+        "interface_tests": [
+          "BUILTIN_TEMPLATES が RuleTemplate[] 型に適合すること",
+          "各テンプレートの必須フィールドが揃っていること"
+        ],
+        "boundary_tests": [
+          "error_pattern が空でないこと",
+          "scope が 'global' | 'project' のいずれかであること"
+        ],
+        "integration_refs": []
+      },
+      "reference_doc": "docs/builder/4-ref/chunk-01-templates.md",
+      "estimated_input_tokens": 2000,
+      "estimated_output_tokens": 1500,
+      "is_integration_test": false
+    },
+    {
+      "id": "chunk-02",
+      "name": "ルールストア",
+      "description": "グローバルとプロジェクトの2層からルールを読み書きする rule-store モジュールを実装する",
+      "depends_on": [
+        "chunk-01"
+      ],
+      "source_docs": [
+        {
+          "path": "2-features/test-rules.md",
+          "sections": [
+            "2.1 バウンダリ（外部との接点）",
+            "4. ルール注入フロー",
+            "7. 設計判断"
+          ],
+          "include": "partial"
+        }
+      ],
+      "source_content": "### 2.1 バウンダリ（外部との接点）\n\n| バウンダリ | 内容 |\n|---|---|\n| **グローバルルールストア** | `~/.cdd/test-rules/{framework}.jsonl` — インストールされた Builder を使う全プロジェクトで共有 |\n| **プロジェクトルールストア** | `{project_dir}/docs/4-ref/test-rules/{framework}.jsonl` — プロジェクト固有ルール |\n| **初期テンプレート** | Builder ソース同梱の `src/test-rules/templates.ts` — ルール化すべき既知パターンの定義 |\n| **Test Agent プロンプト** | `buildTestAgentPrompt()` — ルール注入先 |\n| **チャンク実行状態** | `execution-state.json` の `chunkState.error` — リカバリー検出に使う前回エラー |\n\n## 4. ルール注入フロー\n\n```\nbuildTestAgentPrompt(chunk, recipe)\n  │\n  ├─ tech_stack.test でフレームワーク検出（例: 'vitest'）\n  │\n  ├─ loadRules(framework, projectDir)\n  │    ├─ グローバル: ~/.cdd/test-rules/vitest.jsonl\n  │    └─ プロジェクト: {project_dir}/docs/4-ref/test-rules/vitest.jsonl\n  │    （両方をマージ、重複は id で排除）\n  │\n  └─ ルールあり → プロンプト末尾に追記\n       ## テストフレームワーク固有ルール (vitest)\n       - web-push を default import する場合、vi.mock は { default: {...} } でラップする\n         Bad:  vi.mock('web-push', () => ({ fn: vi.fn() }))\n         Good: vi.mock('web-push', () => ({ default: { fn: vi.fn() } }))\n```\n\nルールなし（初回）の場合はセクションを追加せずプロンプトをそのまま返す。\n\n## 7. 設計判断\n\n### なぜテンプレートを「LLM が発明しない」構造にするか\n\nテンプレートマッチングは regex であり、LLM が新テンプレートを自動生成しない。これにより:\n- 誤ったルールが蓄積されない（誤検出より見逃しを選ぶ）\n- 未知パターンは初回失敗→人が気づく→テンプレート追加という明確なフローになる\n\n### なぜ error_pattern マッチ（regex）にするか\n\nリカバリー内容（テストファイルの diff）から LLM でパターンを蒸留する案と比較して:\n- 実装コストが低い\n- テスト失敗出力は構造化されていることが多く、regex で十分な精度が出る\n- LLM 呼び出しを増やさない（コスト・レイテンシ）\n\n### なぜグローバルとプロジェクトの 2 層にするか\n\nフレームワークレベルのルール（CJS mock パターン等）はプロジェクトをまたいで再利用できる。一方「このプロジェクトは vi.setup.ts でこういう初期化をしている」はプロジェクト固有。スコープをテンプレートが持つことで、蒸留時に LLM が判断しなくてよい。",
+      "implementation_prompt": "以下の設計に基づき、ルールストアを実装してください。\n\n### 2.1 バウンダリ（外部との接点）\n\n| バウンダリ | 内容 |\n|---|---|\n| **グローバルルールストア** | `~/.cdd/test-rules/{framework}.jsonl` — インストールされた Builder を使う全プロジェクトで共有 |\n| **プロジェクトルールストア** | `{project_dir}/docs/4-ref/test-rules/{framework}.jsonl` — プロジェクト固有ルール |\n| **初期テンプレート** | Builder ソース同梱の `src/test-rules/templates.ts` — ルール化すべき既知パターンの定義 |\n| **Test Agent プロンプト** | `buildTestAgentPrompt()` — ルール注入先 |\n| **チャンク実行状態** | `execution-state.json` の `chunkState.error` — リカバリー検出に使う前回エラー |\n\n## 4. ルール注入フロー\n\n```\nbuildTestAgentPrompt(chunk, recipe)\n  │\n  ├─ tech_stack.test でフレームワーク検出（例: 'vitest'）\n  │\n  ├─ loadRules(framework, projectDir)\n  │    ├─ グローバル: ~/.cdd/test-rules/vitest.jsonl\n  │    └─ プロジェクト: {project_dir}/docs/4-ref/test-rules/vitest.jsonl\n  │    （両方をマージ、重複は id で排除）\n  │\n  └─ ルールあり → プロンプト末尾に追記\n       ## テストフレームワーク固有ルール (vitest)\n       - web-push を default import する場合、vi.mock は { default: {...} } でラップする\n         Bad:  vi.mock('web-push', () => ({ fn: vi.fn() }))\n         Good: vi.mock('web-push', () => ({ default: { fn: vi.fn() } }))\n```\n\nルールなし（初回）の場合はセクションを追加せずプロンプトをそのまま返す。\n\n## 7. 設計判断\n\n### なぜテンプレートを「LLM が発明しない」構造にするか\n\nテンプレートマッチングは regex であり、LLM が新テンプレートを自動生成しない。これにより:\n- 誤ったルールが蓄積されない（誤検出より見逃しを選ぶ）\n- 未知パターンは初回失敗→人が気づく→テンプレート追加という明確なフローになる\n\n### なぜ error_pattern マッチ（regex）にするか\n\nリカバリー内容（テストファイルの diff）から LLM でパターンを蒸留する案と比較して:\n- 実装コストが低い\n- テスト失敗出力は構造化されていることが多く、regex で十分な精度が出る\n- LLM 呼び出しを増やさない（コスト・レイテンシ）\n\n### なぜグローバルとプロジェクトの 2 層にするか\n\nフレームワークレベルのルール（CJS mock パターン等）はプロジェクトをまたいで再利用できる。一方「このプロジェクトは vi.setup.ts でこういう初期化をしている」はプロジェクト固有。スコープをテンプレートが持つことで、蒸留時に LLM が判断しなくてよい。\n\n## 実装方針\n- `builder/src/test-rules/rule-store.ts` に loadRules と appendRule を実装する\n- グローバルストア: `~/.cdd/test-rules/{framework}.jsonl`\n- プロジェクトストア: `{project_dir}/docs/4-ref/test-rules/{framework}.jsonl`\n- loadRules はグローバルとプロジェクトをマージし id で重複排除して返す\n- appendRule は同じ template_id からのルールが既に存在する場合は追記しない\n- テストは `builder/tests/test-rules/rule-store.test.ts` に書く（tmpdir を使う）",
+      "expected_outputs": [
+        "builder/src/test-rules/rule-store.ts",
+        "builder/tests/test-rules/rule-store.test.ts"
+      ],
+      "completion_criteria": [
+        "loadRules(framework, projectDir) がグローバルとプロジェクト両方のルールをマージして返す",
+        "appendRule がスコープに応じて正しいファイルに追記する",
+        "同じ template_id のルールを2回 append しても1件しか保存されない",
+        "ストアファイルが存在しない場合に空配列を返す",
+        "テストが通る"
+      ],
+      "test_requirements": {
+        "interface_tests": [
+          "loadRules が StoredRule[] を返すこと",
+          "appendRule が Promise<void> を返すこと"
+        ],
+        "boundary_tests": [
+          "ファイル未存在時に空配列を返す",
+          "グローバルとプロジェクト両方にルールがある場合にマージされる",
+          "template_id が重複する append は無視される"
+        ],
+        "integration_refs": [
+          "chunk-01 の StoredRule 型を使う"
+        ]
+      },
+      "reference_doc": "docs/builder/4-ref/chunk-02-rule-store.md",
+      "estimated_input_tokens": 2500,
+      "estimated_output_tokens": 2000,
+      "is_integration_test": false
+    },
+    {
+      "id": "chunk-03",
+      "name": "ルール抽出器",
+      "description": "テスト失敗出力とテンプレートを照合し StoredRule を生成する rule-extractor モジュールを実装する",
+      "depends_on": [
+        "chunk-01"
+      ],
+      "source_docs": [
+        {
+          "path": "2-features/test-rules.md",
+          "sections": [
+            "5. リカバリー検出とルール蒸留",
+            "3. 初期テンプレート",
+            "7. 設計判断"
+          ],
+          "include": "partial"
+        }
+      ],
+      "source_content": "## 5. リカバリー検出とルール蒸留\n\n`complete_chunk` がチャンクを `done` に遷移させる際、以下を実行する:\n\n```\ncomplete_chunk() でチャンク完了\n  │\n  ├─ retry_count > 0 かつ last_error あり\n  │    → リカバリーが発生したとみなす\n  │\n  ├─ matchErrorToTemplate(last_error, framework)\n  │    → templates を走査して error_pattern の regex マッチ\n  │\n  ├─ マッチあり\n  │    instantiateRule(template, errorContext) で StoredRule を生成\n  │    → template.scope に応じて appendRule()\n  │         global → ~/.cdd/test-rules/{fw}.jsonl\n  │         project → {project_dir}/docs/4-ref/test-rules/{fw}.jsonl\n  │\n  └─ マッチなし → スキップ（初回失敗として許容）\n```\n\nルールの重複追記は `template_id` で検出して防ぐ（同テンプレートからのルールは 1 件のみ保持）。\n\n## 3. 初期テンプレート\n\n`src/test-rules/templates.ts` に同梱し、インストール直後から有効。\n\n| id | framework | error_pattern（概要） | scope |\n|---|---|---|---|\n| `mock-cjs-default` | vitest | `No \"default\" export is defined on the .* mock` | global |\n| `mock-hoisting` | vitest | `hoisting` / `vi.mock.*outside` 系 | global |\n\nテンプレートの追加は手動運用（LLM がテンプレート自体を自動生成しない）。未知パターンはリカバリー検出でマッチせずスキップされ、初回失敗として許容される。\n\n## 7. 設計判断\n\n### なぜテンプレートを「LLM が発明しない」構造にするか\n\nテンプレートマッチングは regex であり、LLM が新テンプレートを自動生成しない。これにより:\n- 誤ったルールが蓄積されない（誤検出より見逃しを選ぶ）\n- 未知パターンは初回失敗→人が気づく→テンプレート追加という明確なフローになる\n\n### なぜ error_pattern マッチ（regex）にするか\n\nリカバリー内容（テストファイルの diff）から LLM でパターンを蒸留する案と比較して:\n- 実装コストが低い\n- テスト失敗出力は構造化されていることが多く、regex で十分な精度が出る\n- LLM 呼び出しを増やさない（コスト・レイテンシ）\n\n### なぜグローバルとプロジェクトの 2 層にするか\n\nフレームワークレベルのルール（CJS mock パターン等）はプロジェクトをまたいで再利用できる。一方「このプロジェクトは vi.setup.ts でこういう初期化をしている」はプロジェクト固有。スコープをテンプレートが持つことで、蒸留時に LLM が判断しなくてよい。",
+      "implementation_prompt": "以下の設計に基づき、ルール抽出器を実装してください。\n\n## 5. リカバリー検出とルール蒸留\n\n`complete_chunk` がチャンクを `done` に遷移させる際、以下を実行する:\n\n```\ncomplete_chunk() でチャンク完了\n  │\n  ├─ retry_count > 0 かつ last_error あり\n  │    → リカバリーが発生したとみなす\n  │\n  ├─ matchErrorToTemplate(last_error, framework)\n  │    → templates を走査して error_pattern の regex マッチ\n  │\n  ├─ マッチあり\n  │    instantiateRule(template, errorContext) で StoredRule を生成\n  │    → template.scope に応じて appendRule()\n  │         global → ~/.cdd/test-rules/{fw}.jsonl\n  │         project → {project_dir}/docs/4-ref/test-rules/{fw}.jsonl\n  │\n  └─ マッチなし → スキップ（初回失敗として許容）\n```\n\nルールの重複追記は `template_id` で検出して防ぐ（同テンプレートからのルールは 1 件のみ保持）。\n\n## 3. 初期テンプレート\n\n`src/test-rules/templates.ts` に同梱し、インストール直後から有効。\n\n| id | framework | error_pattern（概要） | scope |\n|---|---|---|---|\n| `mock-cjs-default` | vitest | `No \"default\" export is defined on the .* mock` | global |\n| `mock-hoisting` | vitest | `hoisting` / `vi.mock.*outside` 系 | global |\n\nテンプレートの追加は手動運用（LLM がテンプレート自体を自動生成しない）。未知パターンはリカバリー検出でマッチせずスキップされ、初回失敗として許容される。\n\n## 7. 設計判断\n\n### なぜテンプレートを「LLM が発明しない」構造にするか\n\nテンプレートマッチングは regex であり、LLM が新テンプレートを自動生成しない。これにより:\n- 誤ったルールが蓄積されない（誤検出より見逃しを選ぶ）\n- 未知パターンは初回失敗→人が気づく→テンプレート追加という明確なフローになる\n\n### なぜ error_pattern マッチ（regex）にするか\n\nリカバリー内容（テストファイルの diff）から LLM でパターンを蒸留する案と比較して:\n- 実装コストが低い\n- テスト失敗出力は構造化されていることが多く、regex で十分な精度が出る\n- LLM 呼び出しを増やさない（コスト・レイテンシ）\n\n### なぜグローバルとプロジェクトの 2 層にするか\n\nフレームワークレベルのルール（CJS mock パターン等）はプロジェクトをまたいで再利用できる。一方「このプロジェクトは vi.setup.ts でこういう初期化をしている」はプロジェクト固有。スコープをテンプレートが持つことで、蒸留時に LLM が判断しなくてよい。\n\n## 実装方針\n- `builder/src/test-rules/rule-extractor.ts` に matchErrorToTemplate と instantiateRule を実装する\n- matchErrorToTemplate(errorOutput: string, framework: string): RuleTemplate | null\n  - BUILTIN_TEMPLATES から framework が一致するものを絞り込み\n  - error_pattern を RegExp として errorOutput に対してテスト\n  - 最初にマッチしたテンプレートを返す。なければ null\n- instantiateRule(template: RuleTemplate, errorContext: string): StoredRule\n  - uuid を生成して id に設定\n  - rule_template の {{package}} 等を errorContext から抽出して置換（抽出できない場合はプレースホルダのまま）\n  - created_at を ISO 8601 で設定\n- テストは `builder/tests/test-rules/rule-extractor.test.ts` に書く",
+      "expected_outputs": [
+        "builder/src/test-rules/rule-extractor.ts",
+        "builder/tests/test-rules/rule-extractor.test.ts"
+      ],
+      "completion_criteria": [
+        "matchErrorToTemplate が vitest の CJS エラー出力に対して mock-cjs-default テンプレートを返す",
+        "matchErrorToTemplate が関係ないエラー出力に対して null を返す",
+        "matchErrorToTemplate が framework 不一致のテンプレートを返さない",
+        "instantiateRule が valid な StoredRule を生成する",
+        "テストが通る"
+      ],
+      "test_requirements": {
+        "interface_tests": [
+          "matchErrorToTemplate(errorOutput, framework) が RuleTemplate | null を返す",
+          "instantiateRule(template, context) が StoredRule を返す"
+        ],
+        "boundary_tests": [
+          "No \"default\" export エラー文字列で mock-cjs-default がマッチする",
+          "無関係なエラーで null が返る",
+          "framework が 'jest' のとき vitest テンプレートがマッチしない"
+        ],
+        "integration_refs": [
+          "chunk-01 の BUILTIN_TEMPLATES / RuleTemplate / StoredRule を使う"
+        ]
+      },
+      "reference_doc": "docs/builder/4-ref/chunk-03-rule-extractor.md",
+      "estimated_input_tokens": 2000,
+      "estimated_output_tokens": 1800,
+      "is_integration_test": false
+    },
+    {
+      "id": "chunk-04",
+      "name": "buildTestAgentPrompt へのルール注入",
+      "description": "claude-code.ts の buildTestAgentPrompt() に tech_stack 検出とルール注入を追加する",
+      "depends_on": [
+        "chunk-02"
+      ],
+      "source_docs": [
+        {
+          "path": "2-features/test-rules.md",
+          "sections": [
+            "4. ルール注入フロー"
+          ],
+          "include": "partial"
+        },
+        {
+          "path": "3-details/agent-prompts.md",
+          "sections": [
+            "3. Test Agent",
+            "3.2 動的変数",
+            "3.3 プロンプトテンプレート"
+          ],
+          "include": "partial"
+        }
+      ],
+      "source_content": "## 4. ルール注入フロー\n\n```\nbuildTestAgentPrompt(chunk, recipe)\n  │\n  ├─ tech_stack.test でフレームワーク検出（例: 'vitest'）\n  │\n  ├─ loadRules(framework, projectDir)\n  │    ├─ グローバル: ~/.cdd/test-rules/vitest.jsonl\n  │    └─ プロジェクト: {project_dir}/docs/4-ref/test-rules/vitest.jsonl\n  │    （両方をマージ、重複は id で排除）\n  │\n  └─ ルールあり → プロンプト末尾に追記\n       ## テストフレームワーク固有ルール (vitest)\n       - web-push を default import する場合、vi.mock は { default: {...} } でラップする\n         Bad:  vi.mock('web-push', () => ({ fn: vi.fn() }))\n         Good: vi.mock('web-push', () => ({ default: { fn: vi.fn() } }))\n```\n\nルールなし（初回）の場合はセクションを追加せずプロンプトをそのまま返す。\n\n## 3. Test Agent\n\n### 3.1 役割・守るべき原則\n\n- 設計文書と `test_requirements` から**逆算**してテストを書く\n- 実装コードは一切見ない（共有バイアスの排除）\n- テストは全て FAIL する状態で提出する（Red フェーズの成立）\n\n根拠: [execution-flow §4.1](../2-features/execution-flow.md), [execution-flow §6 設計判断](../2-features/execution-flow.md)\n\n### 3.2 動的変数\n\n| 変数 | 内容 | 由来 |\n|---|---|---|\n| `chunk_id` | チャンク ID | recipe.json |\n| `chunk_name` | チャンク名 | recipe.json |\n| `source_content` | 設計文書の該当セクション | recipe.json |\n| `test_requirements` | interface_tests / boundary_tests / integration_refs | recipe.json |\n| `test_expected_outputs` | 生成すべきテストファイル一覧 | recipe.json（`expected_outputs` からテストファイルを抽出） |\n| `depends_on_types` | 依存チャンクの公開インターフェース（型情報のみ） | 実行状態ファイル |\n\n### 3.3 プロンプトテンプレート\n\n```\nあなたは Test Agent です。設計文書とテスト要件から逆算してテストコードを書きます。\n実装コードは一切見ていません。これは意図的な分離で、共有バイアスを排除するためです。\n\n### 3.2 動的変数\n\n| 変数 | 内容 | 由来 |\n|---|---|---|\n| `chunk_id` | チャンク ID | recipe.json |\n| `chunk_name` | チャンク名 | recipe.json |\n| `source_content` | 設計文書の該当セクション | recipe.json |\n| `test_requirements` | interface_tests / boundary_tests / integration_refs | recipe.json |\n| `test_expected_outputs` | 生成すべきテストファイル一覧 | recipe.json（`expected_outputs` からテストファイルを抽出） |\n| `depends_on_types` | 依存チャンクの公開インターフェース（型情報のみ） | 実行状態ファイル |\n\n### 3.3 プロンプトテンプレート\n\n```\nあなたは Test Agent です。設計文書とテスト要件から逆算してテストコードを書きます。\n実装コードは一切見ていません。これは意図的な分離で、共有バイアスを排除するためです。",
+      "implementation_prompt": "以下の設計に基づき、Test Agent プロンプトへのルール注入を実装してください。\n\n## 4. ルール注入フロー\n\n```\nbuildTestAgentPrompt(chunk, recipe)\n  │\n  ├─ tech_stack.test でフレームワーク検出（例: 'vitest'）\n  │\n  ├─ loadRules(framework, projectDir)\n  │    ├─ グローバル: ~/.cdd/test-rules/vitest.jsonl\n  │    └─ プロジェクト: {project_dir}/docs/4-ref/test-rules/vitest.jsonl\n  │    （両方をマージ、重複は id で排除）\n  │\n  └─ ルールあり → プロンプト末尾に追記\n       ## テストフレームワーク固有ルール (vitest)\n       - web-push を default import する場合、vi.mock は { default: {...} } でラップする\n         Bad:  vi.mock('web-push', () => ({ fn: vi.fn() }))\n         Good: vi.mock('web-push', () => ({ default: { fn: vi.fn() } }))\n```\n\nルールなし（初回）の場合はセクションを追加せずプロンプトをそのまま返す。\n\n## 3. Test Agent\n\n### 3.1 役割・守るべき原則\n\n- 設計文書と `test_requirements` から**逆算**してテストを書く\n- 実装コードは一切見ない（共有バイアスの排除）\n- テストは全て FAIL する状態で提出する（Red フェーズの成立）\n\n根拠: [execution-flow §4.1](../2-features/execution-flow.md), [execution-flow §6 設計判断](../2-features/execution-flow.md)\n\n### 3.2 動的変数\n\n| 変数 | 内容 | 由来 |\n|---|---|---|\n| `chunk_id` | チャンク ID | recipe.json |\n| `chunk_name` | チャンク名 | recipe.json |\n| `source_content` | 設計文書の該当セクション | recipe.json |\n| `test_requirements` | interface_tests / boundary_tests / integration_refs | recipe.json |\n| `test_expected_outputs` | 生成すべきテストファイル一覧 | recipe.json（`expected_outputs` からテストファイルを抽出） |\n| `depends_on_types` | 依存チャンクの公開インターフェース（型情報のみ） | 実行状態ファイル |\n\n### 3.3 プロンプトテンプレート\n\n```\nあなたは Test Agent です。設計文書とテスト要件から逆算してテストコードを書きます。\n実装コードは一切見ていません。これは意図的な分離で、共有バイアスを排除するためです。\n\n### 3.2 動的変数\n\n| 変数 | 内容 | 由来 |\n|---|---|---|\n| `chunk_id` | チャンク ID | recipe.json |\n| `chunk_name` | チャンク名 | recipe.json |\n| `source_content` | 設計文書の該当セクション | recipe.json |\n| `test_requirements` | interface_tests / boundary_tests / integration_refs | recipe.json |\n| `test_expected_outputs` | 生成すべきテストファイル一覧 | recipe.json（`expected_outputs` からテストファイルを抽出） |\n| `depends_on_types` | 依存チャンクの公開インターフェース（型情報のみ） | 実行状態ファイル |\n\n### 3.3 プロンプトテンプレート\n\n```\nあなたは Test Agent です。設計文書とテスト要件から逆算してテストコードを書きます。\n実装コードは一切見ていません。これは意図的な分離で、共有バイアスを排除するためです。\n\n## 対象ファイル\n`builder/src/adapters/claude-code.ts` の buildTestAgentPrompt() および generateTests() を修正する。\n\n## 実装方針\n- generateTests() が recipe (tech_stack, working_dir) を受け取れるよう引数を追加する\n- buildTestAgentPrompt() に framework と projectDir を追加引数として渡す\n- buildTestAgentPrompt() 内で loadRules(framework, projectDir) を呼び出す\n- ルールが1件以上ある場合のみ以下のセクションをプロンプト末尾に追加する:\n  `## テストフレームワーク固有ルール ({framework})\\n- {rule}\\n  Bad: {example_before}\\n  Good: {example_after}`\n- ルールが0件の場合はセクションを追加しない\n- テストは `builder/tests/test-rules/prompt-injection.test.ts` に書く（loadRules をモックする）",
+      "expected_outputs": [
+        "builder/tests/test-rules/prompt-injection.test.ts"
+      ],
+      "completion_criteria": [
+        "ルールあり時にプロンプトに '## テストフレームワーク固有ルール' セクションが含まれる",
+        "ルールなし時にセクションが追加されない",
+        "tech_stack.test が undefined のときにクラッシュしない",
+        "テストが通る"
+      ],
+      "test_requirements": {
+        "interface_tests": [
+          "buildTestAgentPrompt() がルールありの場合にセクションを含む文字列を返す",
+          "buildTestAgentPrompt() がルールなしの場合にセクションを含まない文字列を返す"
+        ],
+        "boundary_tests": [
+          "tech_stack.test が undefined / null のときにエラーにならない",
+          "example_before / example_after が undefined のルールでも正しくフォーマットされる"
+        ],
+        "integration_refs": [
+          "chunk-02 の loadRules を使う"
+        ]
+      },
+      "reference_doc": "docs/builder/4-ref/chunk-04-prompt-injection.md",
+      "estimated_input_tokens": 3000,
+      "estimated_output_tokens": 2000,
+      "is_integration_test": false
+    },
+    {
+      "id": "chunk-05",
+      "name": "リカバリー検出とルール蒸留",
+      "description": "complete-chunk.ts にリカバリー検出を追加し、types.ts に last_error フィールドを追加する",
+      "depends_on": [
+        "chunk-02",
+        "chunk-03"
+      ],
+      "source_docs": [
+        {
+          "path": "2-features/test-rules.md",
+          "sections": [
+            "5. リカバリー検出とルール蒸留",
+            "6. チャンク実行状態への追加"
+          ],
+          "include": "partial"
+        }
+      ],
+      "source_content": "## 5. リカバリー検出とルール蒸留\n\n`complete_chunk` がチャンクを `done` に遷移させる際、以下を実行する:\n\n```\ncomplete_chunk() でチャンク完了\n  │\n  ├─ retry_count > 0 かつ last_error あり\n  │    → リカバリーが発生したとみなす\n  │\n  ├─ matchErrorToTemplate(last_error, framework)\n  │    → templates を走査して error_pattern の regex マッチ\n  │\n  ├─ マッチあり\n  │    instantiateRule(template, errorContext) で StoredRule を生成\n  │    → template.scope に応じて appendRule()\n  │         global → ~/.cdd/test-rules/{fw}.jsonl\n  │         project → {project_dir}/docs/4-ref/test-rules/{fw}.jsonl\n  │\n  └─ マッチなし → スキップ（初回失敗として許容）\n```\n\nルールの重複追記は `template_id` で検出して防ぐ（同テンプレートからのルールは 1 件のみ保持）。\n\n## 6. チャンク実行状態への追加\n\n`chunkState` に `last_error?: string` を追加する。\n\n- チャンク失敗時: `last_error = error` として保存\n- チャンク成功時: `last_error` は保持（リカバリー検出のため上書きしない）\n- 次回チャンク開始時: `last_error` をクリア",
+      "implementation_prompt": "以下の設計に基づき、リカバリー検出とルール蒸留を実装してください。\n\n## 5. リカバリー検出とルール蒸留\n\n`complete_chunk` がチャンクを `done` に遷移させる際、以下を実行する:\n\n```\ncomplete_chunk() でチャンク完了\n  │\n  ├─ retry_count > 0 かつ last_error あり\n  │    → リカバリーが発生したとみなす\n  │\n  ├─ matchErrorToTemplate(last_error, framework)\n  │    → templates を走査して error_pattern の regex マッチ\n  │\n  ├─ マッチあり\n  │    instantiateRule(template, errorContext) で StoredRule を生成\n  │    → template.scope に応じて appendRule()\n  │         global → ~/.cdd/test-rules/{fw}.jsonl\n  │         project → {project_dir}/docs/4-ref/test-rules/{fw}.jsonl\n  │\n  └─ マッチなし → スキップ（初回失敗として許容）\n```\n\nルールの重複追記は `template_id` で検出して防ぐ（同テンプレートからのルールは 1 件のみ保持）。\n\n## 6. チャンク実行状態への追加\n\n`chunkState` に `last_error?: string` を追加する。\n\n- チャンク失敗時: `last_error = error` として保存\n- チャンク成功時: `last_error` は保持（リカバリー検出のため上書きしない）\n- 次回チャンク開始時: `last_error` をクリア\n\n## 対象ファイル\n- `builder/src/types.ts`: ChunkState に last_error?: string を追加する\n- `builder/src/execution-engine/complete-chunk.ts`: チャンク完了時のリカバリー検出を追加する\n\n## 実装方針（types.ts）\n- ChunkState の error?: string はそのまま保持\n- last_error?: string を追加: チャンク失敗時に error の値をコピーして保存、成功時には保持したまま\n- 新しいチャンク開始時（status が pending → in_progress）に last_error をクリア\n\n## 実装方針（complete-chunk.ts）\n- チャンクが done に遷移したとき、以下を確認する:\n  1. chunkState.retry_count > 0 かつ chunkState.last_error が存在する\n  2. recipe.tech_stack.test（フレームワーク）が取得できる\n- 条件を満たす場合:\n  1. matchErrorToTemplate(chunkState.last_error, framework) でテンプレートマッチ\n  2. マッチした場合: instantiateRule(template, chunkState.last_error) で StoredRule を生成\n  3. appendRule(rule, template.scope, state.working_dir) で保存\n- テストは `builder/tests/test-rules/recovery-detection.test.ts` に書く",
+      "expected_outputs": [
+        "builder/tests/test-rules/recovery-detection.test.ts"
+      ],
+      "completion_criteria": [
+        "ChunkState に last_error?: string が追加されている",
+        "チャンク失敗時に last_error に error がコピーされる",
+        "チャンク開始時に last_error がクリアされる",
+        "retry_count > 0 かつ last_error ありで done に遷移したときにルール蒸留が実行される",
+        "テンプレートマッチなしのときにルールが保存されない",
+        "テストが通る"
+      ],
+      "test_requirements": {
+        "interface_tests": [
+          "ChunkState に last_error フィールドが存在する"
+        ],
+        "boundary_tests": [
+          "retry_count === 0 のときにルール蒸留が実行されない",
+          "last_error が undefined のときにルール蒸留が実行されない",
+          "テンプレートマッチなしのときに appendRule が呼ばれない",
+          "framework が取得できないときにクラッシュしない"
+        ],
+        "integration_refs": [
+          "chunk-02 の appendRule、chunk-03 の matchErrorToTemplate / instantiateRule を使う"
+        ]
+      },
+      "reference_doc": "docs/builder/4-ref/chunk-05-recovery-detection.md",
+      "estimated_input_tokens": 2500,
+      "estimated_output_tokens": 2000,
+      "is_integration_test": false
+    }
+  ],
+  "execution_order": [
+    [
+      "chunk-01"
+    ],
+    [
+      "chunk-02",
+      "chunk-03"
+    ],
+    [
+      "chunk-04",
+      "chunk-05"
+    ]
+  ]
+}
