@@ -190,6 +190,24 @@ describe('checkConsistency', () => {
       expect(issue).toBeDefined()
     })
 
+    it('docs/ サブディレクトリ内の影響文書を正しく検出する（誤検知なし）', async () => {
+      await mkdir(join(tmpDir, 'docs', '2-features'), { recursive: true })
+      await writeFile(join(tmpDir, 'docs', 'basic-design.md'), '# Basic Design')
+      await writeFile(join(tmpDir, 'docs', '2-features', 'session-management.md'), '# Session')
+      await writeDecisionsFile(tmpDir, JSON.stringify({
+        id: 'DEC-001', decision: 'test', rationale: '',
+        affects: ['docs/basic-design.md', 'docs/2-features/session-management.md'],
+        created_at: '2026-01-01T00:00:00Z',
+      }))
+
+      const result = await checkConsistency({ project_dir: tmpDir, focus: ['decisions'] })
+
+      const missingIssues = result.issues.filter(i =>
+        i.category === 'decisions' && i.message.includes('が見つからない')
+      )
+      expect(missingIssues).toHaveLength(0)
+    })
+
     it('decisions.jsonl にない ID がフロントマターにある場合に warn', async () => {
       await writeFile(join(tmpDir, 'a.md'), [
         '---',

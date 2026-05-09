@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
-import { join, basename } from 'node:path'
+import { existsSync } from 'node:fs'
+import { join, basename, relative } from 'node:path'
 import { parseFrontmatter } from '../utils/frontmatter.js'
 import { extractSectionNames, extractWikiLinks } from '../utils/markdown.js'
 import { loadDecisions } from '../utils/decisions.js'
@@ -305,27 +306,38 @@ function checkStaleness(docs: DocContent[], decisions: Decision[]): Issue[] {
 
 // --- ドキュメント読み込み ---
 
+async function collectMdFiles(projectDir: string, dir: string, docs: DocContent[]): Promise<void> {
+  const entries = await readdir(dir, { withFileTypes: true })
+  const sorted = entries.sort((a, b) => a.name.localeCompare(b.name))
+  for (const entry of sorted) {
+    const fullPath = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      await collectMdFiles(projectDir, fullPath, docs)
+    } else if (entry.name.endsWith('.md')) {
+      const content = await readFile(fullPath, 'utf-8')
+      const { frontmatter, body } = parseFrontmatter(content)
+      docs.push({
+        path: relative(projectDir, fullPath),
+        name: basename(entry.name, '.md'),
+        content,
+        body,
+        lines: content.split('\n'),
+        frontmatter,
+        sections: extractSectionNames(body),
+        wikiLinks: extractWikiLinks(body),
+      })
+    }
+  }
+}
+
 async function loadDocs(projectDir: string): Promise<DocContent[]> {
-  const entries = await readdir(projectDir)
-  const mdFiles = entries.filter(f => f.endsWith('.md')).sort()
+  // docs/ サブディレクトリがあればそこを再帰スキャン、なければ projectDir 直下
+  const scanRoot = basename(projectDir) !== 'docs' && existsSync(join(projectDir, 'docs'))
+    ? join(projectDir, 'docs')
+    : projectDir
 
   const docs: DocContent[] = []
-  for (const file of mdFiles) {
-    const content = await readFile(join(projectDir, file), 'utf-8')
-    const name = basename(file, '.md')
-    const { frontmatter, body } = parseFrontmatter(content)
-
-    docs.push({
-      path: file,
-      name,
-      content,
-      body,
-      lines: content.split('\n'),
-      frontmatter,
-      sections: extractSectionNames(body),
-      wikiLinks: extractWikiLinks(body),
-    })
-  }
+  await collectMdFiles(projectDir, scanRoot, docs)
   return docs
 }
 
