@@ -55,8 +55,22 @@ async function readTestFiles(testFiles: string[], workingDir: string): Promise<s
 function extractKeywords(item: string): string[] {
   // 識別子っぽいトークン（英数字・ハイフン・アンダースコア、3文字以上）を抽出
   const matches = item.match(/[A-Za-z_][A-Za-z0-9_-]{2,}/g) ?? []
-  return matches
+  return [...new Set(matches)]
 }
+
+/**
+ * テスト本文にキーワードが含まれるかを判定する（prefix match）。
+ * 右側の \b を外すことで camelCase / 接尾辞に対応する:
+ *   "mock"   → "mockMermaidRender" / "vi.mock" / "mockImpl" すべてヒット
+ *   "render" → "mermaid.render" / "rendering" 両方ヒット
+ */
+function containsKeyword(content: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`\\b${escaped}`).test(content)
+}
+
+// interface_tests のキーワード網羅率の最低閾値（半数以上ヒットしていれば pass）
+const KEYWORD_MATCH_THRESHOLD = 0.5
 
 /**
  * テスト品質を静的検証する。
@@ -109,23 +123,31 @@ export async function checkTestQuality(
   }
 
   // 3. パラメータ網羅（warning のみ）
+  // 半数以上のキーワードがヒットしていれば pass。日本語化された英単語や camelCase で
+  // 一部キーワードが落ちても拾える反面、真の漏れ（マッチ率 < 50%）は依然として警告する。
   for (const item of requirements.interface_tests) {
     const keywords = extractKeywords(item)
-    const allFound = keywords.length === 0 || keywords.every(k =>
-      new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(allContent)
-    )
-    if (!allFound && keywords.length > 0) {
-      issues.push(`interface_tests "${item}" に関するテストが見当たらない（キーワード: ${keywords.join(', ')}）`)
+    if (keywords.length === 0) continue
+
+    const matched = keywords.filter(k => containsKeyword(allContent, k))
+    const ratio = matched.length / keywords.length
+    if (ratio < KEYWORD_MATCH_THRESHOLD) {
+      const matchedDesc = matched.length > 0 ? matched.join(', ') : 'なし'
+      issues.push(
+        `interface_tests "${item}" の網羅度が低い ` +
+        `(マッチ ${matched.length}/${keywords.length}: ${matchedDesc} / 期待: ${keywords.join(', ')})`
+      )
     }
   }
 
   // 4. 統合ポイント（warning のみ）
+  // 接続先のキーワードが 1 つでもヒットすれば pass。
   for (const item of requirements.integration_refs) {
     const keywords = extractKeywords(item)
-    const anyFound = keywords.some(k =>
-      new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(allContent)
-    )
-    if (!anyFound && keywords.length > 0) {
+    if (keywords.length === 0) continue
+
+    const anyFound = keywords.some(k => containsKeyword(allContent, k))
+    if (!anyFound) {
       issues.push(`integration_refs "${item}" の統合テストが見当たらない（キーワード: ${keywords.join(', ')}）`)
     }
   }

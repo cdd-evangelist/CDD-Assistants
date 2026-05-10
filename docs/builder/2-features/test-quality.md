@@ -5,7 +5,7 @@ layer: specification
 
 # テスト品質担保機能設計書
 
-更新日: 2026-04-15
+更新日: 2026-05-09
 
 ## 1. 概要
 
@@ -64,6 +64,8 @@ Builder が測るべきは **「実装を壊したらテストが落ちるか」
 | Assertion 品質 | `assert True` や例外不発生のみのテストを検出 |
 
 `test_requirements` の `interface_tests` / `boundary_tests` / `integration_refs` をそれぞれの検証項目と対応付ける。
+
+パラメータ網羅・統合ポイントの照合は、設計文書の要件文から識別子っぽいキーワードを抽出し、テストファイル本文に含まれるかをヒューリスティックに判定する: **prefix match**（右側の word boundary を外して `mockMermaidRender` のような camelCase / 接尾辞にも対応）と **半数以上ヒットで pass の閾値マッチ**（日本語化された英単語などで一部キーワードが落ちても拾える）の組み合わせ。設計文書と実装の表記揺れを許容しつつ、真の漏れ（マッチ率 < 50%）は警告する。
 
 ### 4.2 v0.2 以降: Mutation Testing
 

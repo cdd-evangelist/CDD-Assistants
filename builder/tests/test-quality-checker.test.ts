@@ -149,3 +149,61 @@ describe('テストファイル不在', () => {
     expect(result.issues).toHaveLength(0)
   })
 })
+
+describe('パラメータ網羅: prefix match と閾値マッチ (#28)', () => {
+  it('camelCase 識別子に prefix match でヒット — mock が mockMermaidRender にマッチ', async () => {
+    const path = await writeTest('camel.test.ts', `
+      import { vi } from 'vitest'
+      describe('mermaid コードブロック', () => {
+        it('mermaid.render が呼ばれる', async () => {
+          const mockMermaidRender = vi.fn()
+          vi.mock('mermaid', () => ({ default: { render: mockMermaidRender } }))
+          await renderMd('text')
+          expect(mockMermaidRender).toHaveBeenCalled()
+        })
+      })
+    `)
+    const reqs: TestRequirements = {
+      interface_tests: ['mermaid code block で mermaid.render が呼ばれる (mock)'],
+      boundary_tests: [],
+      integration_refs: [],
+    }
+    const result = await checkTestQuality([path], tmpDir, reqs)
+    // 旧: code/block が日本語化されて全滅 → false negative
+    // 新: mermaid / render / mock が prefix match でヒット → 50% 以上で警告なし
+    expect(result.issues.some(i => i.includes('mermaid code block'))).toBe(false)
+  })
+
+  it('日本語化された英語キーワードが落ちても閾値で通る', async () => {
+    const path = await writeTest('lang.test.ts', `
+      import 'rehype-highlight'
+      it('hljs クラスが付与される', () => {
+        const out = renderMd('javascript code')
+        expect(out).toContain('language-javascript')
+        expect(out).toContain('hljs')
+      })
+    `)
+    const reqs: TestRequirements = {
+      interface_tests: ['language 指定 fenced code に hljs/language-* クラスが付く (rehype-highlight)'],
+      boundary_tests: [],
+      integration_refs: [],
+    }
+    const result = await checkTestQuality([path], tmpDir, reqs)
+    // language / hljs / language- / rehype-highlight がヒット → 50% 以上
+    expect(result.issues.some(i => i.includes('language 指定'))).toBe(false)
+  })
+
+  it('真の漏れ（マッチ率 < 50%）は依然として警告する', async () => {
+    const path = await writeTest('missing.test.ts', `
+      it('unrelated', () => { expect(somethingElse()).toBe(1) })
+    `)
+    const reqs: TestRequirements = {
+      interface_tests: ['parseConfig validates schema with zod'],
+      boundary_tests: [],
+      integration_refs: [],
+    }
+    const result = await checkTestQuality([path], tmpDir, reqs)
+    // parseConfig / validates / schema / zod の 0/4 マッチ → 警告
+    expect(result.issues.some(i => i.includes('parseConfig'))).toBe(true)
+  })
+})
