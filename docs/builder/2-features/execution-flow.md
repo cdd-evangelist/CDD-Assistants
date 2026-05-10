@@ -5,7 +5,7 @@ layer: specification
 
 # 実行フロー機能設計書
 
-更新日: 2026-04-12
+更新日: 2026-05-09
 
 ## 1. 概要
 
@@ -18,7 +18,7 @@ Builder の実行フロー全体を定義する。
 
 - **MCP ツール群** — レシピエンジン（`analyze_design`, `split_chunks`, `validate_refs`, `export_recipe`）+ 実行エンジン（`load_recipe`, `next_chunks`, `complete_chunk`, `execution_status`）
 - **レシピファイル** — `recipe.json`（チャンク定義・実行順序・技術スタック・コード規約参照）
-- **実行状態ファイル** — 各チャンクの進捗を記録（命名規約: `{recipe_name}-state.json`、例: `recipe.json` なら `recipe-state.json`。詳細は [builder-reference](../4-ref/builder-reference.md) §load_recipe 参照）
+- **実行状態ファイル** — 各チャンクの進捗を記録（命名規約: `{recipe_name}-state.json`、例: `recipe.json` なら `recipe-state.json`、`recipe-mdr.json` なら `recipe-mdr-state.json`。詳細は [builder-reference](../4-ref/builder-reference.md) §load_recipe 参照）。並列レシピ運用時の派生命名にも対応するため、`.gitignore` は `*-state.json` の glob 形式で記述することを推奨
 - **コード規約資産** — `AGENTS.md` / `CODING-STANDARDS.md` / `.editorconfig` / linter 設定 / lint・format スクリプト（プロジェクトに存在する場合のみ）
 - **実行アダプタ** — claude-code / local-llm（差し替え可能）
 - **実行エージェント** — Test Agent / Impl Agent / Investigation Agent（アダプタ経由で起動）

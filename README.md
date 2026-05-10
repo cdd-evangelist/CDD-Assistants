@@ -117,6 +117,18 @@ Planner が自動で判断して、CDD のフルコースをスキップしま�
 | `complete_chunk` | チャンクの完了を検証し、記録 |
 | `execution_status` | 全体の実行進捗を可視化 |
 
+### Builder の生成ファイルと `.gitignore`
+
+Builder はレシピと同じディレクトリに以下を生成します。利用プロジェクト側で `.gitignore` への追加を推奨:
+
+```
+# Builder runtime artifacts
+*-state.json   # 実行状態（recipe-state.json / recipe-{name}-state.json 等）
+recipe.json    # チームでレシピを共有しない場合のみ
+```
+
+部分追加実装などで複数レシピを並列運用する（`recipe-mdr.json` のような mini recipe）と派生 state ファイル（`recipe-mdr-state.json`）が生まれるため、`recipe-state.json` 単体指定ではなく `*-state.json` の glob 形式を推奨します。
+
 ## セットアップ
 
 ### 前提条件
