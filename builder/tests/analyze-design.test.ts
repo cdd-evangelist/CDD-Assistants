@@ -352,18 +352,19 @@ describe('analyzeDesign', () => {
       project_name: 'CDD-Assistants',
     })
 
-    const tierOf = (path: string) => result.documents.find(d => d.path === path)!.tier
+    // Windows では path 区切りが \ になるため join で組み立てる
+    const tierOf = (...segs: string[]) => result.documents.find(d => d.path === join(...segs))!.tier
     expect(tierOf('basic-design.md')).toBe('basic')
-    expect(tierOf('planner/3-details/mcp-tools.md')).toBe('detail')
-    expect(tierOf('planner/2-features/wall-hitting.md')).toBe('feature')
-    expect(tierOf('builder/3-details/recipe-engine.md')).toBe('detail')
-    expect(tierOf('builder/4-ref/api.md')).toBe('reference')
+    expect(tierOf('planner', '3-details', 'mcp-tools.md')).toBe('detail')
+    expect(tierOf('planner', '2-features', 'wall-hitting.md')).toBe('feature')
+    expect(tierOf('builder', '3-details', 'recipe-engine.md')).toBe('detail')
+    expect(tierOf('builder', '4-ref', 'api.md')).toBe('reference')
 
     // tiers サマリにも反映される
-    expect(result.tiers.detail).toContain('planner/3-details/mcp-tools.md')
-    expect(result.tiers.detail).toContain('builder/3-details/recipe-engine.md')
-    expect(result.tiers.feature).toContain('planner/2-features/wall-hitting.md')
-    expect(result.tiers.reference).toContain('builder/4-ref/api.md')
+    expect(result.tiers.detail).toContain(join('planner', '3-details', 'mcp-tools.md'))
+    expect(result.tiers.detail).toContain(join('builder', '3-details', 'recipe-engine.md'))
+    expect(result.tiers.feature).toContain(join('planner', '2-features', 'wall-hitting.md'))
+    expect(result.tiers.reference).toContain(join('builder', '4-ref', 'api.md'))
     expect(result.tiers.basic).toContain('basic-design.md')
   })
 
