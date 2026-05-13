@@ -317,7 +317,8 @@ async function collectMdFiles(projectDir: string, dir: string, docs: DocContent[
       const content = await readFile(fullPath, 'utf-8')
       const { frontmatter, body } = parseFrontmatter(content)
       docs.push({
-        path: relative(projectDir, fullPath),
+        // decisions.jsonl の affects 等は forward-slash 前提のため Windows でも揃える
+        path: relative(projectDir, fullPath).replace(/\\/g, '/'),
         name: basename(entry.name, '.md'),
         content,
         body,
