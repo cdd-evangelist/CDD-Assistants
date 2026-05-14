@@ -39,7 +39,7 @@ Builder の実行フロー全体を定義する。
 - **コード規約ダイジェスト注入** — `recipe.json` の `coding_standards` から生成したダイジェストを、Test/Impl Agent に渡すプロンプトに自動付加
 - **Dual-Agent TDD** — Test Agent（Red）→ Impl Agent（Green）→ オーケストレーター（照合）
 - **Investigation による原因仕分け** — 照合 NG 時に Investigation Agent が「実装の問題 / 設計の曖昧さ / テスト不足」のいずれかに分類し、適切な差し戻し先を選ぶ
-- **完了検証** — ファイル存在・テスト通過・基準照合・規約適合・テスト品質の 5 レベル
+- **完了検証** — ファイル存在・テスト通過・基準照合・規約適合の 4 レベルで `status` を判定。テスト品質（v0.1 静的チェック）は informational で `status` には効かせない（Issue #32、[テスト品質 §4.1](test-quality.md)）
 
 ## 3. ユースケース
 

@@ -473,13 +473,15 @@ chunk-04 の source_content に含まれる:
 
 **検証レベル:**
 
-| レベル | 内容 | 自動化 |
-|--------|------|--------|
-| ファイル存在 | expected_outputs が全て存在するか | 完全自動 |
-| テスト通過 | テストファイルが pass するか | 完全自動（条件付き） |
-| 基準照合 | completion_criteria を満たすか | 一部自動 |
-| テスト品質 | test_requirements の観点が網羅されているか | 一部自動 |
-| 規約適合性 | `coding_standards` の linter/formatter が pass するか | 完全自動（規約定義時のみ） |
+| レベル | 内容 | 自動化 | 完了判定への影響 |
+|--------|------|--------|------------------|
+| ファイル存在 | expected_outputs が全て存在するか | 完全自動 | `status` を決める |
+| テスト通過 | テストファイルが pass するか | 完全自動（条件付き） | `status` を決める |
+| 基準照合 | completion_criteria を満たすか | 一部自動 | `status` を決める |
+| テスト品質 | test_requirements の観点が網羅されているか | 一部自動 | **informational**（`status` / `commit_hint` に影響しない — Issue #32） |
+| 規約適合性 | `coding_standards` の linter/formatter が pass するか | 完全自動（規約定義時のみ） | `status` を決める |
+
+テスト品質（v0.1 静的チェック）はキーワードヒューリスティックで false positive が出やすいため、結果は `verification.test_quality_issues` として返すのみで完了判定には効かせない。失敗判定の本命は v0.2 の Mutation Score。詳細は [テスト品質 §7](../2-features/test-quality.md)。
 
 **テスト品質の検証項目:**
 

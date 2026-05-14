@@ -441,6 +441,73 @@ describe('execution_status', () => {
   })
 })
 
+describe('complete_chunk: test_quality_issues は informational（Issue #32）', () => {
+  async function git(...args: string[]) {
+    return exec('git', args, { cwd: tmpDir })
+  }
+
+  it('test_quality_issues があっても status は done になる', async () => {
+    await loadRecipe(recipePath)
+
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+    // 弱い assertion を含むテストファイル → test_quality_issues が立つ
+    await writeFile(
+      join(tmpDir, 'src/schema.test.ts'),
+      'it("t", () => { expect(true).toBe(true) })'
+    )
+
+    const result = await completeChunk(statePath, 'chunk-01', [
+      'src/schema.sql',
+      'src/schema.test.ts',
+    ])
+
+    // テスト品質の指摘は出るが、status は done のまま
+    expect(result.verification.test_quality_issues).toBeDefined()
+    expect(result.verification.test_quality_issues!.length).toBeGreaterThan(0)
+    expect(result.status).toBe('done')
+    expect(result.newly_unblocked.sort()).toEqual(['chunk-02', 'chunk-03'])
+  })
+
+  it('test_quality_issues があっても commit_hint は抑止されない', async () => {
+    await git('init')
+    await git('config', 'user.email', 'test@test.com')
+    await git('config', 'user.name', 'Test')
+    await git('add', '.')
+    await git('commit', '-m', 'init')
+
+    await loadRecipe(recipePath)
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/schema.sql'), 'CREATE TABLE users;')
+    await writeFile(
+      join(tmpDir, 'src/schema.test.ts'),
+      'it("t", () => { expect(true).toBe(true) })'
+    )
+
+    const result = await completeChunk(statePath, 'chunk-01', [
+      'src/schema.sql',
+      'src/schema.test.ts',
+    ])
+
+    expect(result.verification.test_quality_issues!.length).toBeGreaterThan(0)
+    expect(result.status).toBe('done')
+    // tests_passed 相当のシグナルと矛盾せず commit_hint が出る
+    expect(result.commit_hint).not.toBeNull()
+    expect(result.commit_hint!.reason).toBe('chunk_completed')
+  })
+
+  it('ファイル不足など本来の失敗要因では従来通り failed になる', async () => {
+    await loadRecipe(recipePath)
+
+    // expected_outputs を作らずに完了申告 → files_exist=false で failed
+    const result = await completeChunk(statePath, 'chunk-01', [])
+
+    expect(result.status).toBe('failed')
+    expect(result.verification.files_exist).toBe(false)
+    expect(result.commit_hint).toBeNull()
+  })
+})
+
 describe('complete_chunk の commit_hint', () => {
   async function git(...args: string[]) {
     return exec('git', args, { cwd: tmpDir })

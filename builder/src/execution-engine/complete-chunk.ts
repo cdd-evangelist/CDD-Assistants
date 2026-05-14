@@ -102,7 +102,11 @@ export async function completeChunk(
   }
 
   // 3. テスト品質静的検証（test-quality.md §4.1 の v0.1 項目）
-  let testQualityPassed: boolean | undefined
+  // v0.1 の静的チェックは informational 扱い: status / commit_hint には影響させず、
+  // verification.test_quality_issues として参考情報を返すのみ（Issue #32）。
+  // キーワードヒューリスティックは false positive が出やすく、失敗判定に直結させると
+  // tests_passed: true でもコミット支援フローが断絶するため。失敗判定の本命は
+  // v0.2 の Mutation Testing。
   let testQualityIssues: string[] | undefined
 
   if (filesExist) {
@@ -120,7 +124,6 @@ export async function completeChunk(
         state.working_dir,
         requirements
       )
-      testQualityPassed = qualityResult.passed
       testQualityIssues = qualityResult.issues.length > 0 ? qualityResult.issues : undefined
     }
   }
@@ -146,11 +149,11 @@ export async function completeChunk(
     }
   }
 
-  // 5. 完了判定（規約違反・テスト品質不足は失敗扱い）
+  // 5. 完了判定（ファイル存在・テスト・規約違反は失敗扱い）
+  // テスト品質の静的チェックは informational なので完了判定に含めない（Issue #32）
   const success =
     filesExist &&
     (testsPassed === undefined || testsPassed) &&
-    (testQualityPassed === undefined || testQualityPassed) &&
     (lintPassed === undefined || lintPassed) &&
     (formatPassed === undefined || formatPassed)
 
@@ -163,9 +166,6 @@ export async function completeChunk(
     const errorParts: string[] = []
     if (missingFiles.length > 0) errorParts.push(`Missing files: ${missingFiles.join(', ')}`)
     if (testErrors?.length) errorParts.push(`Tests failed: ${testErrors.join('\n')}`)
-    if (testQualityPassed === false && testQualityIssues?.length) {
-      errorParts.push(`Test quality: ${testQualityIssues.join('; ')}`)
-    }
     if (lintErrors?.length) errorParts.push(`Lint failed: ${lintErrors.join('\n')}`)
     if (formatErrors?.length) errorParts.push(`Format failed: ${formatErrors.join('\n')}`)
     chunkState.error = errorParts.join('\n') || 'Unknown error'
