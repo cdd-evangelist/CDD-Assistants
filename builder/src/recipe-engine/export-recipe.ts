@@ -166,10 +166,9 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
     )
     allWarnings.push(...warnings)
 
-    // implementation_prompt テンプレートの {source_content} を置換
-    const implementationPrompt = draft.implementation_prompt_template
-      .replace('{source_content}', sourceContent)
-
+    // implementation_prompt はテンプレートのまま保存する（Issue #31）。
+    // {source_content} / {{file:path}} の解決は実行時（next_chunks / loadPreparedChunk）が
+    // 一元的に行う。export 時に resolve すると source_content と内容が二重保存される。
     resolvedChunks.push({
       id: draft.id,
       name: draft.name,
@@ -177,7 +176,7 @@ export async function exportRecipe(input: ExportRecipeInput): Promise<ExportReci
       depends_on: draft.depends_on,
       source_docs: draft.source_docs,
       source_content: sourceContent,
-      implementation_prompt: implementationPrompt,
+      implementation_prompt: draft.implementation_prompt_template,
       expected_outputs: draft.expected_outputs,
       completion_criteria: draft.completion_criteria,
       test_requirements: draft.test_requirements,

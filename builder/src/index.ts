@@ -6,7 +6,7 @@ import { splitChunks } from './recipe-engine/split-chunks.js'
 import { validateRefs } from './recipe-engine/validate-refs.js'
 import { exportRecipe } from './recipe-engine/export-recipe.js'
 import { loadRecipe, nextChunks, completeChunk, executionStatus } from './execution-engine/index.js'
-import { generateCodingStandardsDigest } from './execution-engine/next-chunks.js'
+import { generateCodingStandardsDigest, resolveChunkPrompt } from './execution-engine/next-chunks.js'
 import { recordVerificationResult } from './execution-engine/verify-roundtrip.js'
 import { ClaudeCodeExecutor } from './adapters/claude-code.js'
 import { readFile } from 'node:fs/promises'
@@ -169,12 +169,14 @@ async function loadPreparedChunk(executionStatePath: string, chunkId: string) {
   if (!chunk) throw new Error(`チャンク ${chunkId} が recipe.json に見つかりません`)
 
   const digest = generateCodingStandardsDigest(recipe.coding_standards, recipe.tech_stack)
+  // recipe.json には未解決のテンプレートが入っているため、ここで解決する（Issue #31）
+  const implementationPrompt = await resolveChunkPrompt(chunk, state.working_dir, digest)
 
   return {
     chunk: {
       id: chunk.id,
       name: chunk.name,
-      implementation_prompt: chunk.implementation_prompt,
+      implementation_prompt: implementationPrompt,
       expected_outputs: chunk.expected_outputs,
       completion_criteria: chunk.completion_criteria,
       test_requirements: chunk.test_requirements,

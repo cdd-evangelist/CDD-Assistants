@@ -250,10 +250,12 @@ DraftChunk（split_chunks の出力）
         ↓ export_recipe で変換
 
 Chunk（recipe.json の最終形）
-  ├── implementation_prompt           … プレースホルダ解決済みの完全なプロンプト
+  ├── implementation_prompt           … テンプレートのまま（{source_content} 未解決）。実行時に解決する
   ├── test_requirements               … そのまま引き継ぎ
   └── source_content                  … 設計文書の該当セクションが埋め込み済み
 ```
+
+`implementation_prompt` は `implementation_prompt_template` を未解決のまま保持する。`{source_content}` を export 時に解決すると `source_content` フィールドと内容が二重保存され recipe.json が肥大化するため、解決は実行時に一元化する（Issue #31）。
 
 ### 3.3 `validate_refs`
 
@@ -407,9 +409,12 @@ Chunk（recipe.json の最終形）
 
 **処理ステップ:**
 1. 実行状態から `pending` かつ依存が全て `done` のチャンクを抽出
-2. 各チャンクの `source_content` 内の `{{file:...}}` プレースホルダを、実際のファイル内容に置換
-3. `coding_standards` のダイジェスト（規約ファイル名 + 主要ルール + lint/format コマンド）を `implementation_prompt` の末尾に自動挿入
-4. 実装プロンプトを組み立てる
+2. 各チャンクの `implementation_prompt` と `source_content` 内の `{{file:...}}` プレースホルダを、実際のファイル内容に置換
+3. `implementation_prompt` 内の `{source_content}` プレースホルダを、解決済みの `source_content` で置換（recipe.json には未解決のテンプレートが入っている — Issue #31）
+4. `coding_standards` のダイジェスト（規約ファイル名 + 主要ルール + lint/format コマンド）を `implementation_prompt` の末尾に自動挿入
+5. 実装プロンプトを組み立てる
+
+> 上記 2〜4 の解決処理は `resolveChunkPrompt` ヘルパーに集約されており、`run_test_agent` 等のエージェント実行プリミティブ（`loadPreparedChunk`）も同じヘルパーを使う。
 
 **プレースホルダ解決の例:**
 ```

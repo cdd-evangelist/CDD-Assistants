@@ -325,9 +325,9 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 - 見出しレベルを記録し、次の同レベル以上の見出しが現れるまでをセクション範囲とする
 - セクションが見つからない場合、`<!-- セクション "{name}" が見つかりませんでした -->` を出力する
 
-**ステップ 3: implementation_prompt の生成**
+**ステップ 3: implementation_prompt の保存**
 
-`implementation_prompt_template` 内の `{source_content}` プレースホルダを、解決済みの source_content で置換する。
+`implementation_prompt_template` を**未解決のまま** `implementation_prompt` に保存する。`{source_content}` / `{{file:path}}` プレースホルダは export 時には解決せず、実行時（`next_chunks` / `loadPreparedChunk`）に一元的に解決する。export 時に解決すると `source_content` フィールドと内容が二重保存され、recipe.json が構造的に肥大化するため（Issue #31）。
 
 **ステップ 4: execution_order の算出**
 
@@ -362,9 +362,11 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
    - `in_progress`: 何もしない（スキップ）
    - `pending` で全依存が `done`: `readyIds` に追加
    - `pending` で未解決の依存あり: `blocked` に追加
-3. ready チャンクについて `PreparedChunk` を組み立てる:
-   - `resolvePlaceholders` 関数で `{{file:path}}` 形式のプレースホルダを実際のファイル内容に置換する。ファイルが存在する場合は `// --- {path} ---\n{content}` 形式で埋め込み、存在しない場合は `// --- {path} (未生成) ---` を挿入する
-   - `implementation_prompt` と `source_content` の両方でプレースホルダ解決を行い、さらに `implementation_prompt` 内の `{source_content}` を解決済み `source_content` で置換する
+3. ready チャンクについて `resolveChunkPrompt` ヘルパーで `PreparedChunk` の `implementation_prompt` を組み立てる:
+   - `resolvePlaceholders` 関数で `implementation_prompt` と `source_content` の両方の `{{file:path}}` 形式のプレースホルダを実際のファイル内容に置換する。ファイルが存在する場合は `// --- {path} ---\n{content}` 形式で埋め込み、存在しない場合は `// --- {path} (未生成) ---` を挿入する
+   - `implementation_prompt` 内の `{source_content}` を解決済み `source_content` で置換する
+   - 統合テストチャンク以外は末尾にコード規約ダイジェストを付加する
+   - recipe.json にはプレースホルダ未解決のテンプレートが保存されているため（Issue #31）、解決は実行時に行う。`loadPreparedChunk`（`run_test_agent` 等のエージェント実行プリミティブ）も同じ `resolveChunkPrompt` を使う
 4. `progress` を `{done数}/{total} 完了` 形式の文字列で返す
 
 ### 4.3 complete_chunk

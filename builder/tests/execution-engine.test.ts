@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { loadRecipe } from '../src/execution-engine/load-recipe.js'
-import { nextChunks } from '../src/execution-engine/next-chunks.js'
+import { nextChunks, resolveChunkPrompt } from '../src/execution-engine/next-chunks.js'
 import { completeChunk } from '../src/execution-engine/complete-chunk.js'
 import { executionStatus } from '../src/execution-engine/execution-status.js'
-import type { Recipe } from '../src/types.js'
+import type { Recipe, Chunk } from '../src/types.js'
 
 const exec = promisify(execFile)
 
@@ -340,6 +340,73 @@ describe('coding_standards_digest の注入', () => {
     const result = await nextChunks(statePath)
     expect(result.ready[0].coding_standards_digest).toBeDefined()
     expect(typeof result.ready[0].coding_standards_digest).toBe('string')
+  })
+})
+
+describe('resolveChunkPrompt（実行時のプレースホルダ解決 / Issue #31）', () => {
+  function makeChunk(overrides?: Partial<Chunk>): Chunk {
+    return {
+      id: 'chunk-01',
+      name: 'テスト',
+      description: 'テスト',
+      depends_on: [],
+      source_docs: [],
+      source_content: '## 設計\nCREATE TABLE users (id INTEGER);',
+      implementation_prompt: '以下を実装:\n\n{source_content}',
+      expected_outputs: [],
+      completion_criteria: [],
+      test_requirements: { interface_tests: [], boundary_tests: [], integration_refs: [] },
+      reference_doc: 'docs/4-ref/chunk-01-ref.md',
+      estimated_input_tokens: 500,
+      estimated_output_tokens: 500,
+      is_integration_test: false,
+      ...overrides,
+    }
+  }
+
+  it('未解決テンプレートの {source_content} を source_content で置換する', async () => {
+    const chunk = makeChunk()
+    const prompt = await resolveChunkPrompt(chunk, tmpDir, 'DIGEST')
+
+    expect(prompt).toContain('以下を実装:')
+    expect(prompt).toContain('CREATE TABLE users (id INTEGER);')
+    expect(prompt).not.toContain('{source_content}')
+  })
+
+  it('source_content 内の {{file:path}} を実ファイル内容で解決する', async () => {
+    await mkdir(join(tmpDir, 'src'), { recursive: true })
+    await writeFile(join(tmpDir, 'src/dep.ts'), 'export const dep = 1;')
+    const chunk = makeChunk({
+      source_content: '依存コード:\n{{file:src/dep.ts}}',
+    })
+
+    const prompt = await resolveChunkPrompt(chunk, tmpDir, 'DIGEST')
+
+    expect(prompt).toContain('export const dep = 1;')
+    expect(prompt).not.toContain('{{file:')
+  })
+
+  it('コード規約ダイジェストを末尾に注入する', async () => {
+    const prompt = await resolveChunkPrompt(makeChunk(), tmpDir, 'DIGEST-本文')
+    expect(prompt.endsWith('DIGEST-本文')).toBe(true)
+  })
+
+  it('統合テストチャンクにはダイジェストを注入しない', async () => {
+    const chunk = makeChunk({ is_integration_test: true })
+    const prompt = await resolveChunkPrompt(chunk, tmpDir, 'DIGEST-本文')
+    expect(prompt).not.toContain('DIGEST-本文')
+  })
+
+  it('解決済みの旧レシピを渡しても no-op で壊れない（後方互換）', async () => {
+    // export 時に resolve 済み = {source_content} プレースホルダが残っていない
+    const chunk = makeChunk({
+      implementation_prompt: '以下を実装:\n\n## 設計\nCREATE TABLE users (id INTEGER);',
+      source_content: '## 設計\nCREATE TABLE users (id INTEGER);',
+    })
+    const prompt = await resolveChunkPrompt(chunk, tmpDir, 'DIGEST')
+
+    expect(prompt).toContain('CREATE TABLE users (id INTEGER);')
+    expect(prompt).not.toContain('{source_content}')
   })
 })
 

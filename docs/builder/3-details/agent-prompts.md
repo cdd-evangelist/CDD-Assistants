@@ -186,7 +186,7 @@ Builder が起動する 3 つの実行エージェント（Test Agent / Impl Age
 |---|---|---|
 | `chunk_id` | チャンク ID | recipe.json |
 | `chunk_name` | チャンク名 | recipe.json |
-| `implementation_prompt` | プレースホルダ解決済みの実装指示 | recipe.json |
+| `implementation_prompt` | 実装指示。recipe.json にはプレースホルダ未解決のテンプレートが入っており、`next_chunks` / `loadPreparedChunk` が実行時に解決する（Issue #31） | recipe.json（実行時に解決） |
 | `test_code` | Step 1 で Test Agent が生成したテスト | 直前 Step の出力 |
 | `expected_outputs` | 生成すべきファイル一覧（テスト除く） | recipe.json |
 | `completion_criteria` | 完了条件 | recipe.json |

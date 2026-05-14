@@ -146,9 +146,40 @@ describe('exportRecipe', () => {
     expect(chunk.source_content).toContain('Client → Server → DB')
     expect(chunk.source_content).not.toContain('## 3. その他')
 
-    // implementation_prompt に source_content が展開されている
+    // implementation_prompt はテンプレートのまま保存される（Issue #31）。
+    // {source_content} は export 時に resolve せず、実行時に next_chunks が解決する。
     expect(chunk.implementation_prompt).toContain('以下の設計に基づいて実装')
-    expect(chunk.implementation_prompt).toContain('Client → Server → DB')
+    expect(chunk.implementation_prompt).toContain('{source_content}')
+    expect(chunk.implementation_prompt).not.toContain('Client → Server → DB')
+  })
+
+  it('implementation_prompt に source_content を二重保存しない（Issue #31）', async () => {
+    await writeFile(join(docsDir, 'design.md'), [
+      '# 設計',
+      '## 詳細',
+      'A'.repeat(2000),
+    ].join('\n'))
+
+    const input: ExportRecipeInput = {
+      project: 'Test',
+      tech_stack: { language: 'TypeScript' },
+      docs_dir: docsDir,
+      output_path: join(tmpDir, 'recipe.json'),
+      chunks: [makeMinimalChunk({
+        source_docs: [{ path: 'design.md', sections: ['全体'], include: 'full' }],
+        implementation_prompt_template: '以下を実装:\n\n{source_content}',
+      })],
+    }
+
+    const result = await exportRecipe(input)
+    const recipe: Recipe = JSON.parse(await readFile(result.recipe_path, 'utf-8'))
+    const chunk = recipe.chunks[0]
+
+    // source_content には設計文書の中身が入る
+    expect(chunk.source_content).toContain('A'.repeat(2000))
+    // implementation_prompt はプレースホルダのままで、設計文書の中身を含まない
+    expect(chunk.implementation_prompt).toBe('以下を実装:\n\n{source_content}')
+    expect(chunk.implementation_prompt).not.toContain('A'.repeat(100))
   })
 
   it('full include は文書全体を埋め込む', async () => {

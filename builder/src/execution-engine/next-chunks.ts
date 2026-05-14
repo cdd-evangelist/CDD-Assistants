@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { resolve, dirname, join } from 'node:path'
-import type { Recipe, ExecutionState, PreparedChunk, NextChunksResult, CodingStandards, TechStack } from '../types.js'
+import type { Recipe, ExecutionState, PreparedChunk, NextChunksResult, Chunk, CodingStandards, TechStack } from '../types.js'
 
 // --- コード規約ダイジェスト生成（coding-standards.md §4） ---
 
@@ -80,6 +80,28 @@ async function resolvePlaceholders(content: string, workingDir: string): Promise
 }
 
 /**
+ * チャンクの implementation_prompt を実行時に解決する。
+ *
+ * - implementation_prompt / source_content 内の `{{file:path}}` を実ファイル内容で置換
+ * - `{source_content}` プレースホルダを解決済み source_content で置換
+ * - コード規約ダイジェストを末尾に注入（統合テストチャンクは実装プロンプトを持たないため除く）
+ *
+ * recipe.json には未解決のテンプレートが保存されており（Issue #31）、
+ * 解決は実行時に一元化する。next_chunks と loadPreparedChunk の両方がこのヘルパーを使う。
+ * 既に解決済みの旧レシピを読んでも、`.replace` がマッチせず no-op になるため後方互換。
+ */
+export async function resolveChunkPrompt(
+  chunk: Chunk,
+  workingDir: string,
+  digest: string,
+): Promise<string> {
+  const resolvedPrompt = await resolvePlaceholders(chunk.implementation_prompt, workingDir)
+  const resolvedContent = await resolvePlaceholders(chunk.source_content, workingDir)
+  const basePrompt = resolvedPrompt.replace('{source_content}', resolvedContent)
+  return chunk.is_integration_test ? basePrompt : `${basePrompt}\n\n${digest}`
+}
+
+/**
  * 依存が解決済みのチャンクを返す。
  * プレースホルダを実際のコードに差し込み済みの実装指示を組み立てる。
  *
@@ -141,20 +163,7 @@ export async function nextChunks(executionStatePath: string, limit = 1): Promise
     const chunk = chunkMap.get(id)
     if (!chunk) continue
 
-    const resolvedPrompt = await resolvePlaceholders(
-      chunk.implementation_prompt,
-      state.working_dir
-    )
-    const resolvedContent = await resolvePlaceholders(
-      chunk.source_content,
-      state.working_dir
-    )
-
-    // 統合テストチャンクにはダイジェストを注入しない（実装プロンプトを持たないため）
-    const basePrompt = resolvedPrompt.replace('{source_content}', resolvedContent)
-    const finalPrompt = chunk.is_integration_test
-      ? basePrompt
-      : `${basePrompt}\n\n${digest}`
+    const finalPrompt = await resolveChunkPrompt(chunk, state.working_dir, digest)
 
     ready.push({
       id: chunk.id,
