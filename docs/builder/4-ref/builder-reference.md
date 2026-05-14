@@ -151,7 +151,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 | フィールド | 型 | デフォルト |
 |---|---|---|
 | `model` | `string` | `'sonnet'` |
-| `timeout` | `number` | `300000`（5分） |
+| `timeout` | `number` | `600000`（10分） |
 | `allowedTools` | `string[]` | `['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']` |
 
 ---
@@ -430,7 +430,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
 
 デフォルト設定:
 - `model`: `'sonnet'`
-- `timeout`: `300000`（5分、ミリ秒）
+- `timeout`: `600000`（10分、ミリ秒）。`run_test_agent` / `run_impl_agent` の `timeout_ms` パラメータで上書き可能（Issue #33）
 - `allowedTools`: `['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep']`
 
 **`execute` メソッドの処理フロー**
@@ -447,7 +447,7 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
    - `maxBuffer`: 10MB
 4. 実行後に再度 `listFiles` でファイル一覧を取得し、新規ファイルまたは mtime が更新されたファイルを `generatedFiles` として検出する
 5. `generatedFiles` の中から `chunk.reference_doc` に一致するパスを `reference_doc` として分離する
-6. CLI 実行が失敗した場合は `success: false` と `error` メッセージを返す
+6. CLI 実行が失敗した場合は `success: false` と `error`（一行サマリ）に加えて `error_detail` を返す。`error_detail` は `kind`（timeout / subprocess_exit / buffer_overflow / spawn_error / unknown）・`elapsed_ms`・`exit_code`・`signal`・`last_log_excerpt`（stderr 末尾 20 行）を持つ構造化詳細で、再 run 判断の材料になる（Issue #33）。部分生成があれば `partial: true` で生成済みファイルも返す
 
 **`buildPrompt` のプロンプト構造**
 
@@ -635,9 +635,19 @@ PreparedChunk
 
 ExecutionResult
   ├── success: boolean
+  ├── partial?: boolean                  # エラーでも部分生成があれば true
   ├── generated_files: string[]
   ├── reference_doc?: string
-  └── error?: string
+  ├── error?: string                     # 一行サマリ
+  └── error_detail?: AgentErrorDetail     # 構造化エラー詳細（Issue #33）
+
+AgentErrorDetail
+  ├── kind: 'timeout' | 'subprocess_exit' | 'buffer_overflow' | 'spawn_error' | 'unknown'
+  ├── message: string
+  ├── elapsed_ms: number
+  ├── exit_code?: number | null
+  ├── signal?: string
+  └── last_log_excerpt?: string          # stderr 末尾 20 行
 
 ChunkExecutor                           # インターフェース
   └── execute(chunk: PreparedChunk): Promise<ExecutionResult>

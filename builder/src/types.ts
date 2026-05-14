@@ -248,6 +248,26 @@ export interface PreparedChunk {
   coding_standards_digest?: string // next_chunks がプロンプトに付加済み
 }
 
+/**
+ * Agent 実行（claude CLI）が失敗したときの構造化エラー詳細。
+ * 1 行の error 文字列だけでは「再 run すべきか / recipe の問題か」を判断しづらいため、
+ * 種別・経過時間・終了コード・ログ抜粋を添える（Issue #33）。
+ */
+export interface AgentErrorDetail {
+  /** 失敗の種別 */
+  kind: 'timeout' | 'subprocess_exit' | 'buffer_overflow' | 'spawn_error' | 'unknown'
+  /** 人間向けの一行サマリ（error フィールドと同内容） */
+  message: string
+  /** claude CLI の起動から終了までの経過時間（ミリ秒） */
+  elapsed_ms: number
+  /** subprocess_exit のときの終了コード */
+  exit_code?: number | null
+  /** SIGTERM 等、シグナルで終了した場合のシグナル名 */
+  signal?: string
+  /** stderr の末尾抜粋（原因切り分け用） */
+  last_log_excerpt?: string
+}
+
 export interface ExecutionResult {
   success: boolean
   /** タイムアウト等のエラーでも部分生成があった場合 true。generated_files に生成済みファイルを含む */
@@ -255,6 +275,8 @@ export interface ExecutionResult {
   generated_files: string[]
   reference_doc?: string // 生成されたリファレンスのパス
   error?: string
+  /** 失敗時の構造化エラー詳細（Issue #33） */
+  error_detail?: AgentErrorDetail
 }
 
 export interface TestGenerationResult {
@@ -263,6 +285,8 @@ export interface TestGenerationResult {
   partial?: boolean
   test_files: string[]  // 生成されたテストファイルパス
   error?: string
+  /** 失敗時の構造化エラー詳細（Issue #33） */
+  error_detail?: AgentErrorDetail
 }
 
 export interface DivergenceReport {

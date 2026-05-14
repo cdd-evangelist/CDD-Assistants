@@ -195,10 +195,11 @@ server.tool(
     execution_state_path: z.string().describe('実行状態ファイルのパス'),
     chunk_id: z.string().describe('対象チャンク ID'),
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
+    timeout_ms: z.number().optional().describe('claude CLI のタイムアウト（ミリ秒、デフォルト: 600000 = 10分）'),
   },
-  async ({ execution_state_path, chunk_id, model }) => {
+  async ({ execution_state_path, chunk_id, model, timeout_ms }) => {
     const { chunk, framework } = await loadPreparedChunk(execution_state_path, chunk_id)
-    const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet' })
+    const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet', timeout: timeout_ms })
     const result = await executor.generateTests(chunk as any, framework)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
   }
@@ -212,10 +213,11 @@ server.tool(
     chunk_id: z.string().describe('対象チャンク ID'),
     test_files: arrayOfStrings.describe('Test Agent が生成したテストファイルのパス一覧'),
     model: z.string().optional().describe('使用モデル（デフォルト: sonnet）'),
+    timeout_ms: z.number().optional().describe('claude CLI のタイムアウト（ミリ秒、デフォルト: 600000 = 10分）'),
   },
-  async ({ execution_state_path, chunk_id, test_files, model }) => {
+  async ({ execution_state_path, chunk_id, test_files, model, timeout_ms }) => {
     const { chunk } = await loadPreparedChunk(execution_state_path, chunk_id)
-    const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet' })
+    const executor = new ClaudeCodeExecutor({ model: model ?? 'sonnet', timeout: timeout_ms })
     const result = await executor.implement(chunk as any, test_files)
     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] }
   }

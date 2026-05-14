@@ -9,6 +9,7 @@ import type {
   DivergenceReport,
   Artifacts,
   InvestigationResult,
+  AgentErrorDetail,
 } from '../types.js'
 import { loadRules } from '../test-rules/rule-store.js'
 
@@ -275,6 +276,14 @@ function buildInvestigationPrompt(
 // --- claude CLI 実行ユーティリティ ---
 
 const MAX_BUFFER = 10 * 1024 * 1024
+const STDERR_EXCERPT_LINES = 20
+
+/** stderr の末尾 N 行を抜粋する（原因切り分け用、Issue #33）。空なら undefined。 */
+function tailLines(text: string, n: number): string | undefined {
+  const trimmed = text.trimEnd()
+  if (!trimmed) return undefined
+  return trimmed.split('\n').slice(-n).join('\n')
+}
 
 /**
  * claude CLI を起動してプロンプトを実行する。
@@ -286,12 +295,15 @@ const MAX_BUFFER = 10 * 1024 * 1024
  *   プロンプトは -p 引数で渡しているので stdin 入力は不要。
  *
  *   stdout / stderr は capture 用に pipe で受ける。サイズ上限は MAX_BUFFER。
+ *
+ * 失敗時は error（1 行サマリ）に加えて error_detail（種別・経過時間・終了コード・
+ * ログ抜粋）を返し、呼び出し側が再 run 判断に使えるようにする（Issue #33）。
  */
 export async function runClaude(
   prompt: string,
   workingDir: string,
   config: Required<ClaudeCodeConfig>,
-): Promise<{ stdout: string; error?: string }> {
+): Promise<{ stdout: string; error?: string; error_detail?: AgentErrorDetail }> {
   const args = [
     '-p', prompt,
     '--output-format', 'text',
@@ -301,6 +313,8 @@ export async function runClaude(
   for (const tool of config.allowedTools) {
     args.push('--allowedTools', tool)
   }
+
+  const start = Date.now()
 
   return new Promise((resolve) => {
     const child = spawn('claude', args, {
@@ -339,23 +353,68 @@ export async function runClaude(
 
     child.on('error', (err: Error) => {
       clearTimeout(timer)
-      resolve({ stdout: '', error: err.message })
+      resolve({
+        stdout: '',
+        error: err.message,
+        error_detail: {
+          kind: 'spawn_error',
+          message: err.message,
+          elapsed_ms: Date.now() - start,
+        },
+      })
     })
 
-    child.on('close', (code: number | null) => {
+    child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
       clearTimeout(timer)
+      const elapsed_ms = Date.now() - start
+      const excerpt = tailLines(stderr, STDERR_EXCERPT_LINES)
+
       if (timedOut) {
-        resolve({ stdout: '', error: 'タイムアウト' })
+        const message = `タイムアウト（${config.timeout}ms 経過）`
+        resolve({
+          stdout: '',
+          error: message,
+          error_detail: {
+            kind: 'timeout',
+            message,
+            elapsed_ms,
+            signal: signal ?? undefined,
+            last_log_excerpt: excerpt,
+          },
+        })
         return
       }
       if (bufferOverflow) {
-        resolve({ stdout: '', error: 'maxBuffer 超過' })
+        const message = 'maxBuffer 超過'
+        resolve({
+          stdout: '',
+          error: message,
+          error_detail: {
+            kind: 'buffer_overflow',
+            message,
+            elapsed_ms,
+            signal: signal ?? undefined,
+            last_log_excerpt: excerpt,
+          },
+        })
         return
       }
       if (code === 0) {
         resolve({ stdout })
       } else {
-        resolve({ stdout: '', error: stderr || `claude exit code ${code}` })
+        const message = stderr || `claude exit code ${code}`
+        resolve({
+          stdout: '',
+          error: message,
+          error_detail: {
+            kind: 'subprocess_exit',
+            message,
+            elapsed_ms,
+            exit_code: code,
+            signal: signal ?? undefined,
+            last_log_excerpt: excerpt,
+          },
+        })
       }
     })
   })
@@ -378,14 +437,14 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
     const prompt = await buildTestAgentPrompt(chunk, framework, chunk.working_dir)
     const before = await listFiles(chunk.working_dir)
 
-    const { error } = await runClaude(prompt, chunk.working_dir, this.config)
+    const { error, error_detail } = await runClaude(prompt, chunk.working_dir, this.config)
 
     const after = await listFiles(chunk.working_dir)
     const generated = detectGeneratedFiles(before, after)
     const testFiles = generated.filter(isTestFile)
 
     if (error) {
-      return { success: false, partial: testFiles.length > 0 || undefined, test_files: testFiles, error }
+      return { success: false, partial: testFiles.length > 0 || undefined, test_files: testFiles, error, error_detail }
     }
     return { success: true, test_files: testFiles }
   }
@@ -406,14 +465,14 @@ export class ClaudeCodeExecutor implements ChunkExecutor {
     const prompt = buildImplAgentPrompt(chunk, testCode)
     const before = await listFiles(chunk.working_dir)
 
-    const { error } = await runClaude(prompt, chunk.working_dir, this.config)
+    const { error, error_detail } = await runClaude(prompt, chunk.working_dir, this.config)
 
     const after = await listFiles(chunk.working_dir)
     const generated = detectGeneratedFiles(before, after)
     const referenceDoc = generated.find(f => f === chunk.reference_doc)
 
     if (error) {
-      return { success: false, partial: generated.length > 0 || undefined, generated_files: generated, reference_doc: referenceDoc, error }
+      return { success: false, partial: generated.length > 0 || undefined, generated_files: generated, reference_doc: referenceDoc, error, error_detail }
     }
     return { success: true, generated_files: generated, reference_doc: referenceDoc }
   }

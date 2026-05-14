@@ -65,17 +65,30 @@ interface PreparedChunk {
 ### 2.3 結果型
 
 ```typescript
+interface AgentErrorDetail {
+  kind: 'timeout' | 'subprocess_exit' | 'buffer_overflow' | 'spawn_error' | 'unknown'
+  message: string                 // 人間向けの一行サマリ（error と同内容）
+  elapsed_ms: number              // CLI 起動から終了までの経過時間
+  exit_code?: number | null       // subprocess_exit のときの終了コード
+  signal?: string                 // SIGTERM 等で終了した場合のシグナル名
+  last_log_excerpt?: string       // stderr の末尾抜粋（原因切り分け用）
+}
+
 interface TestGenerationResult {
   success: boolean
+  partial?: boolean               // エラーでも部分生成があれば true
   test_files: string[]            // 生成されたテストファイルパス
   error?: string
+  error_detail?: AgentErrorDetail // 失敗時の構造化エラー詳細（Issue #33）
 }
 
 interface ExecutionResult {
   success: boolean
+  partial?: boolean               // エラーでも部分生成があれば true
   generated_files: string[]       // 実際に生成されたファイルパス（テスト除く）
   reference_doc?: string          // 生成されたリファレンスのパス
-  error?: string                  // 失敗時のエラー内容
+  error?: string                  // 失敗時のエラー内容（一行サマリ）
+  error_detail?: AgentErrorDetail // 失敗時の構造化エラー詳細（Issue #33）
 }
 
 interface DivergenceReport {
@@ -132,9 +145,10 @@ complete_chunk("chunk-03") ──→ 検証
 
 - `claude` CLI を `-p`（非対話モード）で起動し、`--max-turns 30` で実行
 - 許可ツール: `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep`
-- タイムアウト: 5分（300,000ms）、出力バッファ上限: 10MB
+- タイムアウト: デフォルト 10 分（600,000ms）、出力バッファ上限: 10MB。`run_test_agent` / `run_impl_agent` の `timeout_ms` パラメータで上書き可能（Issue #33）
 - 生成ファイルの検出: 実行前後で `working_dir` 内の全ファイルの mtime を比較し、新規または更新されたファイルを `generated_files` として返す（`node_modules`, `.git` は除外）
 - コード規約の伝播: `PreparedChunk.coding_standards_digest` が存在する場合、Test/Impl Agent のプロンプト冒頭に付加する。Agent は AGENTS.md や linter 設定を自力で Read してから生成を始める
+- 失敗時の戻り値: `error`（一行サマリ）に加えて `error_detail` を返す。`kind` で timeout / subprocess_exit / buffer_overflow / spawn_error を分類し、`elapsed_ms`・`exit_code`・`signal`・`last_log_excerpt`（stderr 末尾 20 行）を添える。呼び出し側が「再 run すべきか / recipe・prompt の問題か」を判断する材料になる（Issue #33）
 
 ### 3.2 local-llm アダプタ
 

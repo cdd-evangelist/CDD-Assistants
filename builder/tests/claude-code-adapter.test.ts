@@ -301,3 +301,99 @@ describe('エラー時の部分生成検出', () => {
     expect(result.error).toBeDefined()
   })
 })
+
+// 終了コードを指定してエラー終了する spawn を組み立てるヘルパー
+function makeExitChild(code: number, stderrLines: string[]) {
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: (s?: string) => boolean }
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  child.kill = () => true
+  queueMicrotask(() => {
+    if (stderrLines.length > 0) {
+      child.stderr.emit('data', Buffer.from(stderrLines.join('\n'), 'utf-8'))
+    }
+    child.emit('close', code)
+  })
+  return child
+}
+
+// 自力で終了せず、kill() されたら SIGTERM つきで close する spawn（タイムアウト検証用）
+function makeHangingChild() {
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: (s?: string) => boolean }
+  child.stdout = new EventEmitter()
+  child.stderr = new EventEmitter()
+  child.kill = (signal?: string) => {
+    queueMicrotask(() => child.emit('close', null, signal ?? 'SIGTERM'))
+    return true
+  }
+  return child
+}
+
+describe('error_detail の構造化（Issue #33）', () => {
+  it('exit code 非ゼロのとき kind=subprocess_exit と exit_code を返す', async () => {
+    spawnMock.mockImplementation(() => makeExitChild(1, ['Error: build failed', 'stack trace line']))
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.generateTests(createTestChunk())
+
+    expect(result.success).toBe(false)
+    expect(result.error_detail).toBeDefined()
+    expect(result.error_detail!.kind).toBe('subprocess_exit')
+    expect(result.error_detail!.exit_code).toBe(1)
+    expect(typeof result.error_detail!.elapsed_ms).toBe('number')
+    expect(result.error_detail!.elapsed_ms).toBeGreaterThanOrEqual(0)
+  })
+
+  it('stderr の末尾が last_log_excerpt に転写される', async () => {
+    spawnMock.mockImplementation(() => makeExitChild(2, ['line A', 'line B', 'last line C']))
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.implement(createTestChunk(), [])
+
+    expect(result.error_detail!.kind).toBe('subprocess_exit')
+    expect(result.error_detail!.exit_code).toBe(2)
+    expect(result.error_detail!.last_log_excerpt).toContain('last line C')
+  })
+
+  it('タイムアウト時に kind=timeout と elapsed_ms を返す', async () => {
+    spawnMock.mockImplementation(() => makeHangingChild())
+
+    // timeout を極小にして、close せず kill 経由で閉じるパスを通す
+    const executor = new ClaudeCodeExecutor({ timeout: 10 })
+    const result = await executor.generateTests(createTestChunk())
+
+    expect(result.success).toBe(false)
+    expect(result.error_detail!.kind).toBe('timeout')
+    expect(result.error_detail!.signal).toBe('SIGTERM')
+    expect(result.error_detail!.elapsed_ms).toBeGreaterThanOrEqual(0)
+    expect(result.error).toContain('タイムアウト')
+  })
+
+  it('spawn 自体が失敗したとき kind=spawn_error を返す', async () => {
+    spawnMock.mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: (s?: string) => boolean }
+      child.stdout = new EventEmitter()
+      child.stderr = new EventEmitter()
+      child.kill = () => true
+      queueMicrotask(() => child.emit('error', new Error('claude: command not found')))
+      return child
+    })
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.implement(createTestChunk(), [])
+
+    expect(result.success).toBe(false)
+    expect(result.error_detail!.kind).toBe('spawn_error')
+    expect(result.error_detail!.message).toContain('command not found')
+  })
+
+  it('成功時は error_detail を付けない', async () => {
+    spawnMock.mockImplementation(() => makeFakeChild('done'))
+
+    const executor = new ClaudeCodeExecutor()
+    const result = await executor.generateTests(createTestChunk())
+
+    expect(result.success).toBe(true)
+    expect(result.error_detail).toBeUndefined()
+  })
+})
